@@ -298,7 +298,7 @@ function renderGrid() {
 }
 
 async function getCatalog(params) {
-  const response = await fetch(`/api/catalog?${new URLSearchParams(params)}`, {headers:{accept:"application/json"}});
+  const response = await fetch(`/api/catalog?${new URLSearchParams({...params, v:"2"})}`, {headers:{accept:"application/json"}});
   if (!response.ok) throw new Error(`Catalog request failed (${response.status})`);
   return response.json();
 }

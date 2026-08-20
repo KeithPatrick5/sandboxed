@@ -92,6 +92,7 @@ module.exports = async function handler(request, response) {
     return response.status(200).json({mode, type, page, catalogSize:CATALOG_SIZE, results:results(payload, type)});
   } catch (error) {
     console.error("[api/catalog]", {mode, type, page, message:String(error), stack:error?.stack});
+    response.setHeader("Cache-Control", "no-store");
     return response.status(502).json({error:"TMDB metadata is temporarily unavailable."});
   }
 };
