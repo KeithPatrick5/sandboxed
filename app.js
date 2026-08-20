@@ -142,7 +142,7 @@ function normalizeItem(item) {
 
 function itemKey(item) { return `${item.type}:${item.id}`; }
 
-const storedItems = safeJson(localStorage.getItem("noctra-saved-items") || "[]", []);
+const storedItems = safeJson(localStorage.getItem("sandboxed-saved-items") || localStorage.getItem("noctra-saved-items") || "[]", []);
 let savedItems = Array.isArray(storedItems) ? storedItems.map(normalizeItem).filter(Boolean) : [];
 if (!savedItems.length) {
   const legacyIds = safeJson(localStorage.getItem("noctra-my-list") || "[]", []);
@@ -226,7 +226,7 @@ function isSaved(item) {
 }
 
 function persistSavedItems() {
-  localStorage.setItem("noctra-saved-items", JSON.stringify(savedItems));
+  localStorage.setItem("sandboxed-saved-items", JSON.stringify(savedItems));
 }
 
 function toggleList(item) {
