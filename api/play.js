@@ -20,7 +20,7 @@ function playerUrl(item) {
   return `https://player.videasy.to/tv/${id}/${season}/${episode}?nextEpisode=true&autoplayNextEpisode=true&episodeSelector=true&overlay=true`;
 }
 
-module.exports = async function handler(request, response) {
+async function handler(request, response) {
   if (request.method !== "POST") return send(response, 405, {error:"Method not allowed"});
   try {
     const {user} = await requireUser(request);
@@ -42,4 +42,7 @@ module.exports = async function handler(request, response) {
   } catch (error) {
     return handlerError(response, error);
   }
-};
+}
+
+module.exports = handler;
+module.exports.playerUrl = playerUrl;
