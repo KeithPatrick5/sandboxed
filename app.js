@@ -1,5 +1,4 @@
 const image = (path) => `https://image.tmdb.org/t/p/w500${path}`;
-const CATALOG_SIZE = 100000;
 
 let catalog = [
   [1368337,"The Odyssey","movie",2026,"/5rhTDKUhPYvpdQIijFIs5VoWsON.jpg"],
@@ -155,18 +154,36 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[character]);
 }
 
-function playerUrl(item) {
-  return item.type === "movie"
-    ? `https://player.videasy.to/movie/${item.id}?overlay=true`
-    : `https://player.videasy.to/tv/${item.id}/1/1?nextEpisode=true&autoplayNextEpisode=true&episodeSelector=true&overlay=true`;
-}
-
 async function play(item) {
   const membership = window.SandboxedMembership;
-  const access = membership ? await membership.authorizePlay(item) : {url:null, sessionId:null};
-  if (!access) return;
+  if (!membership?.authorizePlay) {
+    const membershipModal = document.querySelector("#membership-modal");
+    const membershipContent = document.querySelector("#membership-content");
+    membershipContent.replaceChildren();
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "membership-eyebrow";
+    eyebrow.textContent = "SERVICE UNAVAILABLE";
+    const heading = document.createElement("h2");
+    heading.textContent = "Playback is temporarily unavailable";
+    const copy = document.createElement("p");
+    copy.className = "membership-copy";
+    copy.textContent = "The account service could not be reached. Please reload and try again.";
+    membershipContent.append(eyebrow, heading, copy);
+    membershipModal.hidden = false;
+    document.body.style.overflow = "hidden";
+    document.querySelector("#close-membership").onclick = () => {
+      membershipModal.hidden = true;
+      document.body.style.overflow = "";
+    };
+    return;
+  }
+  const access = await membership.authorizePlay(item);
+  if (!access?.url) return;
+  let playbackUrl;
+  try { playbackUrl = new URL(access.url); } catch { return; }
+  if (playbackUrl.origin !== "https://player.videasy.to") return;
   playerTitle.textContent = item.title;
-  frame.src = access.url || playerUrl(item);
+  frame.src = playbackUrl.href;
   modal.hidden = false;
   document.body.style.overflow = "hidden";
   membership?.startHeartbeat(access.sessionId);
@@ -350,7 +367,7 @@ async function runSearch(term) {
   const query = term.trim();
   if (query.length < 2) {
     browseItems = [];
-    setStatus(`Search ${CATALOG_SIZE.toLocaleString()} movies and series`);
+    setStatus("Search movies and series");
     showEmpty("Search the full catalog.", "Type at least two letters to find a title.");
     return;
   }
@@ -368,7 +385,7 @@ async function runSearch(term) {
     if (activeTab === "tv") results = results.filter((item) => item.type === "tv");
     browseItems = results;
     renderGrid();
-    setStatus(`${results.length} result${results.length === 1 ? "" : "s"} for “${query}” • ${Number(data.catalogSize || CATALOG_SIZE).toLocaleString()} titles indexed • posters included`);
+    setStatus(`${results.length} result${results.length === 1 ? "" : "s"} for “${query}” • posters included`);
     if (!results.length) showEmpty(`Nothing found for “${query}”.`, "Check the spelling or try another title.");
   } catch (error) {
     if (serial !== requestSerial) return;
@@ -420,7 +437,7 @@ function openSearch() {
   clearSearch.hidden = true;
   loadMore.hidden = true;
   browseItems = [];
-  setStatus(`Search ${CATALOG_SIZE.toLocaleString()} movies and series`);
+  setStatus("Search movies and series");
   showEmpty("Search the full catalog.", "Type at least two letters to find a title.");
   setTimeout(() => search.focus(),0);
 }

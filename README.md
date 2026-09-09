@@ -11,7 +11,7 @@ Sandboxed is an isolated movie and series interface with device-specific playbac
 - $20 NOWPayments cryptocurrency purchase granting 365 days
 - Server-side entitlement checks, hashed device/IP abuse signals, restricted database tables, and verified payment callbacks
 
-Membership remains disabled until all required Supabase variables and `DEVICE_HASH_SECRET` are present. This keeps an incomplete configuration from breaking playback.
+Playback fails closed until all required Supabase variables and `DEVICE_HASH_SECRET` are present. If membership configuration or its client script is unavailable, the player remains locked instead of falling back to a direct third-party URL.
 
 ## Run locally
 

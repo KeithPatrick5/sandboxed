@@ -1,6 +1,5 @@
 const TMDB_API_ORIGIN = "https://api.themoviedb.org/3";
 const TMDB_IMAGE_ORIGIN = "https://image.tmdb.org/t/p";
-const CATALOG_SIZE = 100000;
 
 function tmdbCredentials() {
   const readToken = process.env.TMDB_READ_TOKEN?.trim();
@@ -80,16 +79,16 @@ module.exports = async function handler(request, response) {
         ...results(popularMovies, "movie"),
         ...results(popularShows, "tv")
       ]);
-      return response.status(200).json({mode, catalogSize:CATALOG_SIZE, results:combined});
+      return response.status(200).json({mode, results:combined});
     }
 
     if (mode === "search") {
       const payload = await tmdb("/search/multi", {query, page:1});
-      return response.status(200).json({mode, type:"all", page:1, catalogSize:CATALOG_SIZE, results:results(payload)});
+      return response.status(200).json({mode, type:"all", page:1, results:results(payload)});
     }
 
     const payload = await tmdb(`/${type}/popular`, {page});
-    return response.status(200).json({mode, type, page, catalogSize:CATALOG_SIZE, results:results(payload, type)});
+    return response.status(200).json({mode, type, page, results:results(payload, type)});
   } catch (error) {
     console.error("[api/catalog]", {mode, type, page, message:String(error), stack:error?.stack});
     response.setHeader("Cache-Control", "no-store");

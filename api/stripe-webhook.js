@@ -1,6 +1,19 @@
 const crypto = require("crypto");
 const {env, send, readRawBody, safeEqual, db, updateProfile, extendAccess, handlerError} = require("../lib/server");
 
+const ANNUAL_PRICE_CENTS = 2000;
+
+function isExpectedCheckoutPayment(object) {
+  return object?.payment_status === "paid" &&
+    String(object?.currency || "").toLowerCase() === "usd" &&
+    Number(object?.amount_total) === ANNUAL_PRICE_CENTS;
+}
+
+function isExpectedInvoicePayment(object) {
+  return String(object?.currency || "").toLowerCase() === "usd" &&
+    Number(object?.amount_paid) >= ANNUAL_PRICE_CENTS;
+}
+
 function verifySignature(raw, header) {
   const parts = String(header || "").split(",").map((part) => part.split("="));
   const timestamp = parts.find(([key]) => key === "t")?.[1];
@@ -31,7 +44,7 @@ module.exports = async function handler(request, response) {
     const object = event.data?.object || {};
     let userId = object.metadata?.user_id || object.client_reference_id || "";
 
-    if (event.type === "checkout.session.completed" && userId && ["paid", "no_payment_required"].includes(object.payment_status)) {
+    if (event.type === "checkout.session.completed" && userId && isExpectedCheckoutPayment(object)) {
       const until = new Date(Date.now() + 365 * 86400000);
       await extendAccess(userId, until, {
         subscription_status:"active",
@@ -43,7 +56,9 @@ module.exports = async function handler(request, response) {
     if (event.type === "invoice.paid") {
       if (!userId && object.customer) userId = await userByCustomer(String(object.customer));
       const periodEnd = object.lines?.data?.reduce((latest, line) => Math.max(latest, Number(line.period?.end) || 0), 0) || 0;
-      if (userId && periodEnd) await extendAccess(userId, new Date(periodEnd * 1000), {subscription_status:"active"});
+      if (userId && periodEnd && isExpectedInvoicePayment(object)) {
+        await extendAccess(userId, new Date(periodEnd * 1000), {subscription_status:"active"});
+      }
     }
 
     if (event.type === "invoice.payment_failed") {
@@ -58,7 +73,21 @@ module.exports = async function handler(request, response) {
 
     await db("payment_events", {
       method:"POST",
-      body:{provider:"stripe", external_id:event.id, user_id:userId || null, status:event.type, amount:object.amount_paid ? Number(object.amount_paid) / 100 : null, currency:object.currency || null, payload:event},
+      body:{
+        provider:"stripe",
+        external_id:event.id,
+        user_id:userId || null,
+        status:event.type,
+        amount:Number(object.amount_total ?? object.amount_paid ?? 0) / 100 || null,
+        currency:object.currency || null,
+        payload:{
+          event_type:event.type,
+          created:event.created || null,
+          livemode:Boolean(event.livemode),
+          customer:object.customer || null,
+          subscription:object.subscription || null
+        }
+      },
       prefer:"return=minimal"
     });
     return send(response, 200, {received:true});
@@ -68,3 +97,5 @@ module.exports = async function handler(request, response) {
 };
 
 module.exports.config = {api:{bodyParser:false}};
+module.exports.isExpectedCheckoutPayment = isExpectedCheckoutPayment;
+module.exports.isExpectedInvoicePayment = isExpectedInvoicePayment;

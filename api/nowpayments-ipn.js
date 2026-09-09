@@ -1,6 +1,19 @@
 const crypto = require("crypto");
 const {env, send, readBody, safeEqual, db, extendAccess, handlerError} = require("../lib/server");
 
+const USER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function orderUserId(orderId) {
+  const match = String(orderId || "").match(/^sandboxed:([^:]+):(\d+)$/);
+  return match && USER_ID_PATTERN.test(match[1]) ? match[1] : "";
+}
+
+function isExpectedPayment(payload) {
+  return payload?.payment_status === "finished" &&
+    String(payload?.price_currency || "").toLowerCase() === "usd" &&
+    Number(payload?.price_amount) >= 20;
+}
+
 function sortObject(value) {
   if (Array.isArray(value)) return value.map(sortObject);
   if (!value || typeof value !== "object") return value;
@@ -20,11 +33,11 @@ module.exports = async function handler(request, response) {
       .digest("hex");
     if (!safeEqual(request.headers["x-nowpayments-sig"], expected)) return send(response, 400, {error:"Invalid NOWPayments signature"});
     const externalId = String(payload.payment_id || payload.invoice_id || payload.order_id || "");
+    if (!externalId) return send(response, 400, {error:"Missing NOWPayments transaction ID"});
     const existing = await db(`payment_events?provider=eq.nowpayments&external_id=eq.${encodeURIComponent(externalId)}&select=id`, {prefer:""});
     if (existing?.length) return send(response, 200, {received:true, duplicate:true});
-    const orderParts = String(payload.order_id || "").split(":");
-    const userId = orderParts[0] === "sandboxed" ? orderParts[1] : "";
-    if (payload.payment_status === "finished" && userId) {
+    const userId = orderUserId(payload.order_id);
+    if (isExpectedPayment(payload) && userId) {
       const profiles = await db(`profiles?id=eq.${encodeURIComponent(userId)}&select=access_until`, {prefer:""});
       const current = profiles?.[0]?.access_until ? Date.parse(profiles[0].access_until) : 0;
       const until = new Date(Math.max(Date.now(), current) + 365 * 86400000);
@@ -32,7 +45,22 @@ module.exports = async function handler(request, response) {
     }
     await db("payment_events", {
       method:"POST",
-      body:{provider:"nowpayments", external_id:externalId, user_id:userId || null, status:String(payload.payment_status || "unknown"), amount:Number(payload.price_amount || 0) || null, currency:String(payload.price_currency || "usd"), payload},
+      body:{
+        provider:"nowpayments",
+        external_id:externalId,
+        user_id:userId || null,
+        status:String(payload.payment_status || "unknown"),
+        amount:Number(payload.price_amount || 0) || null,
+        currency:String(payload.price_currency || "usd"),
+        payload:{
+          invoice_id:payload.invoice_id || null,
+          payment_id:payload.payment_id || null,
+          order_id:payload.order_id || null,
+          payment_status:payload.payment_status || null,
+          price_amount:Number(payload.price_amount || 0) || null,
+          price_currency:payload.price_currency || null
+        }
+      },
       prefer:"return=minimal"
     });
     return send(response, 200, {received:true});
@@ -40,3 +68,6 @@ module.exports = async function handler(request, response) {
     return handlerError(response, error);
   }
 };
+
+module.exports.orderUserId = orderUserId;
+module.exports.isExpectedPayment = isExpectedPayment;

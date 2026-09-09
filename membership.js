@@ -8,6 +8,7 @@
   const closeButton = document.querySelector("#close-membership");
 
   let config = {membershipEnabled:false, annualPrice:20, currency:"USD", maxDevices:4, maxStreams:2};
+  let configLoaded = false;
   let session = loadSession();
   let account = null;
   let returnFocus = null;
@@ -169,6 +170,7 @@
     else if (view === "recovery") renderRecovery(message);
     else if (view === "paywall") renderPaywall(message);
     else if (view === "device-limit") renderDeviceLimit(message);
+    else if (view === "setup") renderSetup();
     else if (account) renderAccount(message);
     else if (config.membershipEnabled) renderAuth("login", message);
     else renderSetup();
@@ -193,7 +195,7 @@
   }
 
   function renderSetup() {
-    content.innerHTML = `${panelHeader("MEMBERSHIP", "Account setup is finishing", "Sandboxed playback is still available while the private membership connection is completed.")}<p class="membership-message">No account is required yet.</p>`;
+    content.innerHTML = `${panelHeader("SERVICE UNAVAILABLE", "Playback is temporarily unavailable", "The account service could not be reached. Please reload and try again.")}<p class="membership-message">Access remains locked until your account can be verified.</p>`;
   }
 
   function renderAuth(mode, message = "") {
@@ -395,7 +397,10 @@
   }
 
   async function authorizePlay(item) {
-    if (!config.membershipEnabled) return {url:null, sessionId:null};
+    if (!configLoaded || !config.membershipEnabled) {
+      openModal("setup");
+      return null;
+    }
     if (!session) {
       pendingPlay = item;
       openModal("signup");
@@ -479,10 +484,12 @@
     parseAuthRedirect();
     try {
       const response = await fetch("/api/config", {headers:{accept:"application/json"}});
+      if (!response.ok) throw new Error(`Configuration request failed (${response.status})`);
       config = await response.json();
+      configLoaded = true;
     } catch {}
     updateHeader();
-    if (session && config.membershipEnabled) {
+    if (session && configLoaded && config.membershipEnabled) {
       try { await refreshAccount(); }
       catch (error) {
         if (error.code === "DEVICE_LIMIT") openModal("device-limit", error.message);
