@@ -16,10 +16,10 @@ Playback fails closed until all required Supabase variables and `DEVICE_HASH_SEC
 ## Run locally
 
 ```bash
-python3 -m http.server 8080
+npm start
 ```
 
-Open `http://localhost:8080`.
+Open `http://localhost:3000`. This runs the same standalone Node application used by Namecheap cPanel.
 
 ## Deploy
 
@@ -32,6 +32,16 @@ Deploy the folder root to Vercel with no build command. Set `TMDB_READ_TOKEN` (r
 5. In NOWPayments, store the API and IPN secrets in Vercel. The app supplies its callback URL when it creates an invoice.
 
 Required membership variables are `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `DEVICE_HASH_SECRET`. Stripe and NOWPayments activate independently when their respective variables are present.
+
+## Namecheap Shared Hosting
+
+The repository also runs as a single cPanel Node application without third-party packages.
+
+1. In cPanel, open **Setup Node.js App** and select Node.js 20 or newer.
+2. Set the application root to the uploaded repository folder, production mode, and `server.js` as the startup file.
+3. Add the variables from `.env.example` through cPanel; do not upload a populated `.env` file.
+4. Start or restart the application and confirm `/healthz` returns `{\"ok\":true}`.
+5. Update `SITE_URL`, Supabase redirect URLs, Stripe’s webhook URL, and the domain only after the temporary deployment passes testing.
 
 ## Playback
 
