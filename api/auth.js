@@ -1,7 +1,11 @@
-const {baseUrl, send, readBody, supabaseAuth, handlerError} = require("../lib/server");
+const {baseUrl, send, readBody, rateLimit, supabaseAuth, handlerError} = require("../lib/server");
 
 function validEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function validPassword(value) {
+  return typeof value === "string" && value.length >= 8 && value.length <= 128;
 }
 
 module.exports = async function handler(request, response) {
@@ -14,8 +18,9 @@ module.exports = async function handler(request, response) {
     let payload;
 
     if (action === "signup") {
+      rateLimit(request, "auth-signup", 5, 3600);
       if (!validEmail(email)) return send(response, 400, {error:"Enter a valid email address", code:"INVALID_EMAIL"});
-      if (password.length < 8) return send(response, 400, {error:"Password must be at least 8 characters", code:"WEAK_PASSWORD"});
+      if (!validPassword(password)) return send(response, 400, {error:"Password must be between 8 and 128 characters", code:"WEAK_PASSWORD"});
       payload = await supabaseAuth(`/signup?redirect_to=${encodeURIComponent(`${baseUrl()}/?auth=confirmed`)}`, {
         method:"POST",
         body:{email, password}
@@ -28,6 +33,7 @@ module.exports = async function handler(request, response) {
     }
 
     if (action === "login") {
+      rateLimit(request, "auth-login", 20, 600);
       if (!validEmail(email) || !password) return send(response, 400, {error:"Enter your email and password", code:"MISSING_LOGIN"});
       payload = await supabaseAuth("/token?grant_type=password", {method:"POST", body:{email, password}});
       return send(response, 200, {session:payload});
@@ -45,6 +51,7 @@ module.exports = async function handler(request, response) {
     }
 
     if (action === "recover") {
+      rateLimit(request, "auth-recovery", 5, 3600);
       if (!validEmail(email)) return send(response, 400, {error:"Enter a valid email address", code:"INVALID_EMAIL"});
       await supabaseAuth("/recover", {
         method:"POST",
@@ -55,7 +62,7 @@ module.exports = async function handler(request, response) {
 
     if (action === "update-password") {
       if (!body.accessToken) return send(response, 401, {error:"Recovery session required", code:"AUTH_REQUIRED"});
-      if (password.length < 8) return send(response, 400, {error:"Password must be at least 8 characters", code:"WEAK_PASSWORD"});
+      if (!validPassword(password)) return send(response, 400, {error:"Password must be between 8 and 128 characters", code:"WEAK_PASSWORD"});
       await supabaseAuth("/user", {method:"PUT", token:String(body.accessToken), body:{password}});
       return send(response, 200, {ok:true});
     }

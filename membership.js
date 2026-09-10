@@ -116,6 +116,32 @@
     }
   }
 
+  async function fingerprintV2() {
+    const width = Math.min(screen.width, screen.height);
+    const height = Math.max(screen.width, screen.height);
+    const values = [
+      navigator.userAgent,
+      navigator.userAgentData?.platform || navigator.platform,
+      navigator.vendor,
+      navigator.language,
+      (navigator.languages || []).join(","),
+      navigator.hardwareConcurrency,
+      navigator.deviceMemory,
+      navigator.maxTouchPoints,
+      width,
+      height,
+      screen.colorDepth,
+      window.devicePixelRatio,
+      Intl.DateTimeFormat().resolvedOptions().timeZone
+    ].join("|");
+    try {
+      const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(values));
+      return [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, "0")).join("");
+    } catch {
+      return values;
+    }
+  }
+
   function deviceName() {
     const userAgent = navigator.userAgent || "";
     const isiPad = /iPad/i.test(userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -129,7 +155,13 @@
   }
 
   async function devicePayload() {
-    return {deviceId:deviceId(), fingerprint:await fingerprint(), deviceName:deviceName()};
+    const [browserFingerprint, stableFingerprint] = await Promise.all([fingerprint(), fingerprintV2()]);
+    return {
+      deviceId:deviceId(),
+      fingerprint:browserFingerprint,
+      fingerprintV2:stableFingerprint,
+      deviceName:deviceName()
+    };
   }
 
   function formatDate(value) {
@@ -202,9 +234,10 @@
     const signup = mode === "signup";
     content.innerHTML = `${panelHeader(signup ? "START FREE" : "WELCOME BACK", signup ? "Try Sandboxed for three days" : "Sign in to Sandboxed", signup ? "No card required. Your trial begins when your first video starts." : "Continue your trial or membership on this device.")}
       <div class="auth-switch"><button type="button" data-auth-view="login" class="${signup ? "" : "active"}">Sign in</button><button type="button" data-auth-view="signup" class="${signup ? "active" : ""}">Create account</button></div>
-      <form class="membership-form" id="membership-auth-form">
-        <label>Email<input type="email" name="email" autocomplete="email" required></label>
-        <label>Password<input type="password" name="password" autocomplete="${signup ? "new-password" : "current-password"}" minlength="8" required></label>
+      <form class="membership-form" id="membership-auth-form" autocomplete="on">
+        <label for="membership-email">Email<input id="membership-email" type="email" name="email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" required></label>
+        <label for="membership-password">Password<input id="membership-password" type="password" name="password" autocomplete="${signup ? "new-password" : "current-password"}" minlength="8" maxlength="128" required></label>
+        ${signup ? '<label for="membership-password-confirm">Confirm password<input id="membership-password-confirm" type="password" name="confirmPassword" autocomplete="new-password" minlength="8" maxlength="128" required></label><p class="membership-field-hint">Use at least 8 characters. Your browser can save this login.</p>' : ""}
         <button class="membership-primary" type="submit">${signup ? "Create account" : "Sign in"}</button>
       </form>
       ${signup ? "" : '<button class="membership-text-button" type="button" id="forgot-password">Forgot password?</button>'}
@@ -216,10 +249,20 @@
       event.preventDefault();
       const form = new FormData(event.currentTarget);
       const submit = event.currentTarget.querySelector("button[type=submit]");
+      const password = String(form.get("password") || "");
+      const confirmPassword = String(form.get("confirmPassword") || "");
+      if (signup && password !== confirmPassword) {
+        const confirmInput = event.currentTarget.elements.confirmPassword;
+        confirmInput.setCustomValidity("Passwords do not match");
+        confirmInput.reportValidity();
+        confirmInput.focus();
+        setMessage("Passwords do not match.", true);
+        return;
+      }
       submit.disabled = true;
       setMessage(signup ? "Creating your account…" : "Signing in…");
       try {
-        const payload = await authRequest({action:signup ? "signup" : "login", email:form.get("email"), password:form.get("password")});
+        const payload = await authRequest({action:signup ? "signup" : "login", email:form.get("email"), password});
         if (payload.confirmationRequired) return renderVerify("Check your email and tap the verification link, then return here to sign in.");
         const next = normalizeSession(payload.session);
         saveSession(next);
@@ -235,6 +278,7 @@
         submit.disabled = false;
       }
     });
+    content.querySelector('[name="confirmPassword"]')?.addEventListener("input", (event) => event.currentTarget.setCustomValidity(""));
     if (message) setMessage(message, true);
   }
 
@@ -265,14 +309,29 @@
 
   function renderRecovery(message = "") {
     content.innerHTML = `${panelHeader("NEW PASSWORD", "Choose a new password", "Use at least eight characters.")}
-      <form class="membership-form" id="new-password-form"><label>New password<input type="password" name="password" autocomplete="new-password" minlength="8" required></label><button class="membership-primary" type="submit">Update password</button></form>
+      <form class="membership-form" id="new-password-form" autocomplete="on">
+        <label for="recovery-password">New password<input id="recovery-password" type="password" name="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+        <label for="recovery-password-confirm">Confirm new password<input id="recovery-password-confirm" type="password" name="confirmPassword" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+        <button class="membership-primary" type="submit">Update password</button>
+      </form>
       <p class="membership-message" id="membership-message"></p>`;
     content.querySelector("#new-password-form").addEventListener("submit", async (event) => {
       event.preventDefault();
+      const form = new FormData(event.currentTarget);
       const submit = event.currentTarget.querySelector("button[type=submit]");
+      const password = String(form.get("password") || "");
+      const confirmPassword = String(form.get("confirmPassword") || "");
+      if (password !== confirmPassword) {
+        const confirmInput = event.currentTarget.elements.confirmPassword;
+        confirmInput.setCustomValidity("Passwords do not match");
+        confirmInput.reportValidity();
+        confirmInput.focus();
+        setMessage("Passwords do not match.", true);
+        return;
+      }
       submit.disabled = true;
       try {
-        await authRequest({action:"update-password", accessToken:session?.access_token, password:new FormData(event.currentTarget).get("password")});
+        await authRequest({action:"update-password", accessToken:session?.access_token, password});
         recoveryMode = false;
         setMessage("Password updated. You are signed in.");
         setTimeout(async () => { await refreshAccount(); renderAccount(); }, 700);
@@ -281,6 +340,7 @@
         submit.disabled = false;
       }
     });
+    content.querySelector('[name="confirmPassword"]')?.addEventListener("input", (event) => event.currentTarget.setCustomValidity(""));
     if (message) setMessage(message, true);
   }
 

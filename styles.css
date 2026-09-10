@@ -851,6 +851,13 @@ input:focus-visible {
 
 .membership-form input:focus { border-color: rgba(255, 255, 255, 0.64); outline: 0; }
 
+.membership-field-hint {
+  margin: -5px 0 0;
+  color: #777780;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
 .membership-primary,
 .membership-secondary {
   width: 100%;

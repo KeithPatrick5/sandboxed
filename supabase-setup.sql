@@ -18,6 +18,7 @@ create table if not exists public.devices (
   user_id uuid not null references auth.users(id) on delete cascade,
   device_key_hash text not null,
   fingerprint_hash text not null,
+  fingerprint_v2_hash text,
   name text not null,
   last_ip_hash text,
   created_at timestamptz not null default now(),
@@ -28,11 +29,27 @@ create table if not exists public.devices (
 
 create table if not exists public.trial_claims (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null unique references auth.users(id) on delete cascade,
+  user_id uuid unique references auth.users(id) on delete set null,
   fingerprint_hash text not null unique,
+  fingerprint_v2_hash text,
   ip_hash text not null,
   created_at timestamptz not null default now()
 );
+
+-- Trial claims must survive account deletion. Otherwise a person could delete
+-- an account, register another email, and claim the same free trial again.
+alter table public.trial_claims drop constraint if exists trial_claims_user_id_fkey;
+alter table public.trial_claims alter column user_id drop not null;
+alter table public.trial_claims
+  add constraint trial_claims_user_id_fkey
+  foreign key (user_id) references auth.users(id) on delete set null;
+
+-- Safe upgrades for projects created from an earlier version of this file.
+alter table public.devices add column if not exists fingerprint_v2_hash text;
+alter table public.trial_claims add column if not exists fingerprint_v2_hash text;
+create unique index if not exists trial_claims_fingerprint_v2_idx
+  on public.trial_claims(fingerprint_v2_hash)
+  where fingerprint_v2_hash is not null;
 
 create table if not exists public.watch_sessions (
   id uuid primary key default gen_random_uuid(),
