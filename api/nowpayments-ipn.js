@@ -43,6 +43,21 @@ function paymentEventFields(externalId, userId, payload, status, accessUntil = n
   };
 }
 
+function nextCryptoAccessUntil(currentAccessUntil, now = Date.now()) {
+  const current = currentAccessUntil ? Date.parse(currentAccessUntil) : 0;
+  return new Date(Math.max(now, Number.isFinite(current) ? current : 0) + 365 * 86400000).toISOString();
+}
+
+async function closeInvoiceEvent(userId, payload, status) {
+  const invoiceId = String(payload?.invoice_id || "");
+  if (!userId || !invoiceId) return;
+  await db(`payment_events?provider=eq.nowpayments_invoice&external_id=eq.${encodeURIComponent(invoiceId)}&user_id=eq.${encodeURIComponent(userId)}`, {
+    method:"PATCH",
+    body:{status:String(status || "finished")},
+    prefer:"return=minimal"
+  });
+}
+
 async function processPayment(payload) {
   const externalId = String(payload.payment_id || payload.invoice_id || payload.order_id || "");
   if (!externalId) throw Object.assign(new Error("Missing NOWPayments transaction ID"), {status:400, code:"PAYMENT_ID_REQUIRED"});
@@ -55,8 +70,7 @@ async function processPayment(payload) {
     let accessUntil = event?.payload?.access_until || "";
     if (!accessUntil) {
       const profiles = await db(`profiles?id=eq.${encodeURIComponent(userId)}&select=access_until`, {prefer:""});
-      const current = profiles?.[0]?.access_until ? Date.parse(profiles[0].access_until) : 0;
-      accessUntil = new Date(Math.max(Date.now(), current) + 365 * 86400000).toISOString();
+      accessUntil = nextCryptoAccessUntil(profiles?.[0]?.access_until);
     }
     const activating = paymentEventFields(externalId, userId, payload, "activating", accessUntil);
     if (event) {
@@ -74,6 +88,7 @@ async function processPayment(payload) {
       body:paymentEventFields(externalId, userId, payload, "finished", accessUntil),
       prefer:"return=minimal"
     });
+    await closeInvoiceEvent(userId, payload, "finished");
     return {received:true, activated:true, userId};
   }
 
@@ -110,4 +125,5 @@ module.exports = async function handler(request, response) {
 module.exports.orderUserId = orderUserId;
 module.exports.isExpectedPayment = isExpectedPayment;
 module.exports.paymentEventFields = paymentEventFields;
+module.exports.nextCryptoAccessUntil = nextCryptoAccessUntil;
 module.exports.processPayment = processPayment;

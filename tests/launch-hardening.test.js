@@ -178,3 +178,18 @@ test("NOWPayments invoices can recover from a missed final callback", () => {
   assert.match(membership, /\/api\/nowpayments-reconcile/);
   assert.match(standalone, /\/api\/nowpayments-reconcile/);
 });
+
+test("active crypto memberships can renew early without reopening a paid invoice", () => {
+  const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
+  const webhook = fs.readFileSync(path.join(root, "api/nowpayments-ipn.js"), "utf8");
+  assert.match(membership, /Renew \$\$\{annualPrice\(\)\} with Bitcoin or crypto/);
+  assert.match(membership, /adds another 365 days after your current paid-through date/);
+  assert.match(membership, /profile\.state === "active" \? cryptoRenewalButton\(\)/);
+  assert.match(webhook, /provider=eq\.nowpayments_invoice/);
+  assert.match(webhook, /body:\{status:String\(status \|\| "finished"\)\}/);
+
+  const now = Date.parse("2026-09-10T00:00:00.000Z");
+  const future = "2027-09-10T00:00:00.000Z";
+  assert.equal(nowPaymentsWebhook.nextCryptoAccessUntil(future, now), "2028-09-09T00:00:00.000Z");
+  assert.equal(nowPaymentsWebhook.nextCryptoAccessUntil("2025-01-01T00:00:00.000Z", now), "2027-09-10T00:00:00.000Z");
+});

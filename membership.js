@@ -359,6 +359,14 @@
     </div>${!config.stripeEnabled || !config.nowPaymentsEnabled ? '<p class="membership-small">Payment buttons activate when the private processor keys are connected.</p>' : ""}`;
   }
 
+  function cryptoRenewalButton() {
+    return `<div class="payment-actions">
+      <button class="membership-secondary" type="button" data-checkout="nowpayments" ${config.nowPaymentsEnabled ? "" : "disabled"}>Renew $${annualPrice()} with Bitcoin or crypto</button>
+    </div>
+    <p class="membership-small">Renewing adds another 365 days after your current paid-through date.</p>
+    ${!config.nowPaymentsEnabled ? '<p class="membership-small">Crypto renewal activates when the private processor keys are connected.</p>' : ""}`;
+  }
+
   function supportLine() {
     const email = String(config.supportEmail || "").trim();
     return email ? `<p class="membership-small">Need help? <a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></p>` : "";
@@ -409,7 +417,7 @@
     content.innerHTML = `${panelHeader("ACCOUNT", account.user.email, statusCopy)}
       <div class="account-status"><span>${escapeHtml(statusLabel(profile))}</span><small>${config.maxDevices} devices · ${config.maxStreams} streams at once</small></div>
       <div class="device-heading"><strong>Devices</strong><span>${account.devices.length}/${config.maxDevices}</span></div><ul class="device-list">${devices || "<li>No registered devices</li>"}</ul>
-      ${profile.state === "active" && account.billing?.hasStripeCustomer ? '<button class="membership-secondary" type="button" id="billing-portal">Manage card subscription</button>' : profile.state === "active" ? '<p class="membership-small">Crypto membership active. Renew from this account before it expires.</p>' : paymentButtons()}
+      ${profile.state === "active" && account.billing?.hasStripeCustomer ? '<button class="membership-secondary" type="button" id="billing-portal">Manage card subscription</button>' : profile.state === "active" ? cryptoRenewalButton() : paymentButtons()}
       ${supportLine()}
       <button class="membership-text-button" type="button" id="account-signout">Sign out</button><p class="membership-message" id="membership-message"></p>`;
     bindPaymentButtons();
