@@ -13,7 +13,8 @@ function responseRecorder() {
     payload:null,
     setHeader(name, value) { this.headers[name] = value; },
     status(code) { this.statusCode = code; return this; },
-    json(value) { this.payload = value; return this; }
+    json(value) { this.payload = value; return this; },
+    end() { return this; }
   };
 }
 
@@ -39,7 +40,7 @@ test("movie and series browsing use TMDB pages beyond the homepage titles", asyn
     for (const type of ["movie", "tv"]) {
       for (const page of [1, 2]) {
         const response = responseRecorder();
-        await catalogHandler({query:{type, page:String(page)}}, response);
+        await catalogHandler({method:"GET", headers:{}, query:{type, page:String(page)}}, response);
         assert.equal(response.statusCode, 200);
         assert.equal(response.payload.results.length, 20);
         assert.equal(response.payload.page, page);
@@ -57,10 +58,34 @@ test("remote search returns poster-backed TMDB results", async () => {
   global.fetch = async () => ({ok:true, json:async () => ({results:[tmdbItem(603, "The Matrix")]})});
   try {
     const response = responseRecorder();
-    await catalogHandler({query:{mode:"search", q:"matrix"}}, response);
+    await catalogHandler({method:"GET", headers:{}, query:{mode:"search", q:"matrix"}}, response);
     assert.equal(response.statusCode, 200);
     assert.equal(response.payload.results[0].id, 603);
     assert.match(response.payload.results[0].poster, /image\.tmdb\.org/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("catalog rejects POST requests and caches repeated TMDB queries", async () => {
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls += 1;
+    return {ok:true, json:async () => ({results:[tmdbItem(9001, "Cache Test")]})};
+  };
+  try {
+    const rejected = responseRecorder();
+    await catalogHandler({method:"POST", headers:{}, query:{type:"movie", page:"77"}}, rejected);
+    assert.equal(rejected.statusCode, 405);
+    assert.equal(calls, 0);
+
+    for (let index = 0; index < 2; index += 1) {
+      const response = responseRecorder();
+      await catalogHandler({method:"GET", headers:{}, query:{type:"movie", page:"77"}}, response);
+      assert.equal(response.statusCode, 200);
+    }
+    assert.equal(calls, 1);
   } finally {
     global.fetch = originalFetch;
   }

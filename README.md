@@ -11,6 +11,7 @@ Sandboxed is an isolated movie and series interface with device-specific playbac
 - $30 USD yearly Stripe subscription with Checkout, verified webhooks, customer billing portal, refund/dispute suspension, and access through the paid period after cancellation
 - $30 USD NOWPayments cryptocurrency purchase granting 365 days, with verified multi-status IPN callbacks and authenticated missed-callback reconciliation
 - Server-side playback authorization, stale-session cleanup, distinct-device stream counting, and fail-closed access checks
+- GET-only catalog access with request coalescing, bounded server caching, and separate browse/search rate limits
 - Long account identifiers wrap safely on desktop and mobile
 
 Playback fails closed until all required Supabase variables and `DEVICE_HASH_SECRET` are present. If membership configuration or its client script is unavailable, the player remains locked instead of falling back to a direct third-party URL.
