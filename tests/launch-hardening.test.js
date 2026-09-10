@@ -193,3 +193,26 @@ test("active crypto memberships can renew early without reopening a paid invoice
   assert.equal(nowPaymentsWebhook.nextCryptoAccessUntil(future, now), "2028-09-09T00:00:00.000Z");
   assert.equal(nowPaymentsWebhook.nextCryptoAccessUntil("2025-01-01T00:00:00.000Z", now), "2027-09-10T00:00:00.000Z");
 });
+
+test("My List switches storage namespaces when the signed-in account changes", () => {
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
+  assert.match(app, /SAVED_ITEMS_PREFIX = "sandboxed-saved-items:"/);
+  assert.match(app, /sandboxed:account-changed/);
+  assert.match(app, /switchSavedItemsOwner\(event\.detail\?\.userId\)/);
+  assert.doesNotMatch(app, /localStorage\.getItem\("noctra-saved-items"\)/);
+  assert.match(membership, /notifyAccountChanged\(\)/);
+  assert.match(membership, /detail:\{userId:account\?\.user\?\.id/);
+});
+
+test("old operational records are cleaned without deleting permanent trial claims", () => {
+  const server = fs.readFileSync(path.join(root, "lib/server.js"), "utf8");
+  assert.match(server, /watchCutoff = new Date\(now - 30 \* 86400000\)/);
+  assert.match(server, /deviceCutoff = new Date\(now - 90 \* 86400000\)/);
+  assert.match(server, /paymentCutoff = new Date\(now - 400 \* 86400000\)/);
+  assert.match(server, /watch_sessions\?ended_at=not\.is\.null/);
+  assert.match(server, /devices\?revoked_at=not\.is\.null/);
+  assert.match(server, /payment_events\?created_at=lt/);
+  const cleanupBody = server.slice(server.indexOf("async function cleanupOldRecords"), server.indexOf("function scheduleMaintenance"));
+  assert.doesNotMatch(cleanupBody, /trial_claims/);
+});

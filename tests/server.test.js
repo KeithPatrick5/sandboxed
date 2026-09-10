@@ -14,7 +14,8 @@ const {
   secureHash,
   safeEqual,
   signedDeviceId,
-  verifiedDeviceId
+  verifiedDeviceId,
+  cleanupOldRecords
 } = require("../lib/server");
 
 test("membership policy constants match the approved rules", () => {
@@ -75,4 +76,38 @@ test("registered device identity requires a valid server signature", () => {
   assert.equal(verifiedDeviceId(request), id);
   assert.equal(verifiedDeviceId({headers:{cookie:`__Host-sandboxed_device=${signed}tampered`}}), "");
   assert.equal(verifiedDeviceId({headers:{cookie:"__Host-sandboxed_device=attacker-chosen.invalid"}}), "");
+});
+
+test("retention cleanup sends only bounded service-role deletes", async () => {
+  const previousFetch = global.fetch;
+  const testEnvironment = {
+    SUPABASE_URL:"https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY:"test-publishable",
+    SUPABASE_SECRET_KEY:"test-secret",
+    DEVICE_HASH_SECRET:"test-device-secret"
+  };
+  const previousEnvironment = Object.fromEntries(Object.keys(testEnvironment).map((name) => [name, process.env[name]]));
+  const calls = [];
+  Object.assign(process.env, testEnvironment);
+  global.fetch = async (url, options) => {
+    calls.push({url:String(url), method:options.method});
+    return new Response(null, {status:204});
+  };
+  try {
+    const result = await cleanupOldRecords(Date.parse("2026-09-10T00:00:00.000Z"));
+    assert.equal(result.watchCutoff, "2026-08-11T00:00:00.000Z");
+    assert.equal(result.deviceCutoff, "2026-06-12T00:00:00.000Z");
+    assert.equal(result.paymentCutoff, "2025-08-06T00:00:00.000Z");
+    assert.deepEqual(calls.map((call) => call.method), ["DELETE", "DELETE", "DELETE"]);
+    assert.match(calls[0].url, /watch_sessions\?ended_at=not\.is\.null/);
+    assert.match(calls[1].url, /devices\?revoked_at=not\.is\.null/);
+    assert.match(calls[2].url, /payment_events\?created_at=lt/);
+    assert.doesNotMatch(calls.map((call) => call.url).join("\n"), /trial_claims|profiles/);
+  } finally {
+    global.fetch = previousFetch;
+    for (const [name, value] of Object.entries(previousEnvironment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 });

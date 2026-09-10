@@ -20,7 +20,7 @@
       <h2>How information is used</h2>
       <p>Information is used to authenticate accounts, provide trials and memberships, enforce device and playback limits, process payments, prevent abuse, and provide support.</p>
       <h2>Retention and security</h2>
-      <p>Account and transaction records are retained as needed to operate the membership and meet payment or legal obligations. Protected trial-abuse hashes may be retained after account deletion so deleting an account does not create another free trial. Administrative credentials remain server-side, database tables use restricted access rules, and payment notifications are signature-verified.</p>
+      <p>Active account records are retained while needed to operate the membership. Completed playback-session records are deleted after 30 days, revoked-device records after 90 days, and payment-event records after 400 days, subject to any longer legal requirement. Protected trial-abuse hashes may be retained after account deletion so deleting an account does not create another free trial. Technical server errors may be reported to Sentry after email addresses, account identifiers, and secret-like values are removed. Administrative credentials remain server-side, database tables use restricted access rules, and payment notifications are signature-verified.</p>
       <h2>Your choices</h2>
       <p>You may request account-data access or deletion through the support contact shown in your account. Some payment records and non-reversible abuse-prevention hashes may need to be retained for fraud prevention, accounting, or legal compliance.</p>
     </main>

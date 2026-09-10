@@ -13,6 +13,9 @@ Sandboxed is an isolated movie and series interface with device-specific playbac
 - Server-side playback authorization, stale-session cleanup, distinct-device stream counting, and fail-closed access checks
 - GET-only catalog access with request coalescing, bounded server caching, and separate browse/search rate limits
 - Long account identifiers wrap safely on desktop and mobile
+- My List storage is isolated by signed-in account on shared browsers
+- Completed playback sessions, revoked devices, and payment events have bounded retention periods; trial-abuse claims are preserved
+- Unexpected server failures return generic public messages and can be reported to Sentry through an optional DSN with sensitive values redacted
 
 Playback fails closed until all required Supabase variables and `DEVICE_HASH_SECRET` are present. If membership configuration or its client script is unavailable, the player remains locked instead of falling back to a direct third-party URL.
 
@@ -35,6 +38,8 @@ Deploy the folder root to Vercel with no build command. Set `TMDB_READ_TOKEN` (r
 5. In NOWPayments, store the API and IPN secrets in Vercel. The app supplies its callback URL when it creates an invoice.
 
 Required membership variables are `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `DEVICE_HASH_SECRET`. Stripe also requires `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the fixed annual `STRIPE_PRICE_ID`. Stripe and NOWPayments activate independently when their respective variables are present.
+
+Optional server error monitoring uses `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, and `SENTRY_RELEASE`. The DSN is an ingestion credential, not a Sentry account API token. Do not put `SENTRY_AUTH_TOKEN` in the website environment.
 
 ## Namecheap shared hosting
 

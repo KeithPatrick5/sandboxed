@@ -67,6 +67,7 @@
       saveSession(null);
       account = null;
       updateHeader();
+      notifyAccountChanged();
       return null;
     }
   }
@@ -192,6 +193,12 @@
     statusButton.className = `membership-status ${account?.profile?.state ? `is-${account.profile.state}` : ""}`;
     accountButton.textContent = account?.user?.email ? account.user.email[0].toUpperCase() : "S";
     accountButton.setAttribute("aria-label", account ? "Open account" : "Sign in");
+  }
+
+  function notifyAccountChanged() {
+    window.dispatchEvent(new CustomEvent("sandboxed:account-changed", {
+      detail:{userId:account?.user?.id || session?.user?.id || ""}
+    }));
   }
 
   function openModal(view = "account", message = "") {
@@ -472,6 +479,7 @@
     const payload = await authorizedFetch("/api/me", {method:"POST", body:JSON.stringify(await devicePayload())});
     account = payload;
     updateHeader();
+    notifyAccountChanged();
     return payload;
   }
 
@@ -481,6 +489,7 @@
     saveSession(null);
     account = null;
     updateHeader();
+    notifyAccountChanged();
     closeModal();
     if (old?.access_token) authRequest({action:"logout", accessToken:old.access_token}).catch(() => {});
   }
@@ -595,11 +604,17 @@
       configLoaded = true;
     } catch {}
     updateHeader();
+    notifyAccountChanged();
     if (session && configLoaded && config.membershipEnabled) {
       try { await refreshAccount(); }
       catch (error) {
         if (error.code === "DEVICE_LIMIT") openModal("device-limit", error.message);
-        else if (error.status === 401) saveSession(null);
+        else if (error.status === 401) {
+          saveSession(null);
+          account = null;
+          updateHeader();
+          notifyAccountChanged();
+        }
       }
     }
     if (recoveryMode && session) openModal("recovery");

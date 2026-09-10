@@ -3,6 +3,7 @@
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const {reportServerError} = require("./lib/monitoring");
 
 const ROOT = __dirname;
 const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
@@ -89,6 +90,7 @@ function serveStatic(request, response, pathname) {
     response.end(request.method === "HEAD" ? undefined : body);
   } catch (error) {
     console.error("[static]", {pathname, message:error.message});
+    reportServerError(error, {route:pathname});
     sendPlain(response, 500, "The site is temporarily unavailable.");
   }
   return true;
@@ -133,6 +135,7 @@ async function app(request, response) {
       return await handler(request, response);
     } catch (error) {
       console.error("[api]", {pathname:url.pathname, message:error.message, stack:error.stack});
+      reportServerError(error, {route:url.pathname});
       if (!response.headersSent) return response.status(500).json({error:"The service is temporarily unavailable."});
       return response.end();
     }
@@ -146,6 +149,7 @@ function createServer() {
   return http.createServer((request, response) => {
     app(request, response).catch((error) => {
       console.error("[server]", {message:error.message, stack:error.stack});
+      reportServerError(error, {route:"server"});
       if (!response.headersSent) sendPlain(response, 500, "The service is temporarily unavailable.");
       else response.end();
     });

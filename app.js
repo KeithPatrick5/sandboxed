@@ -141,12 +141,39 @@ function normalizeItem(item) {
 
 function itemKey(item) { return `${item.type}:${item.id}`; }
 
-const storedItems = safeJson(localStorage.getItem("sandboxed-saved-items") || localStorage.getItem("noctra-saved-items") || "[]", []);
-let savedItems = Array.isArray(storedItems) ? storedItems.map(normalizeItem).filter(Boolean) : [];
-if (!savedItems.length) {
-  const legacyIds = safeJson(localStorage.getItem("noctra-my-list") || "[]", []);
-  if (Array.isArray(legacyIds)) savedItems = catalog.filter((item) => legacyIds.includes(item.id));
+const SAVED_ITEMS_PREFIX = "sandboxed-saved-items:";
+const LEGACY_SAVED_ITEMS_KEY = "sandboxed-saved-items";
+const USER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function initialSavedItemsOwner() {
+  try {
+    const storedSession = safeJson(localStorage.getItem("sandboxed-auth-session") || "null", null);
+    return USER_ID_PATTERN.test(storedSession?.user?.id || "") ? storedSession.user.id : "guest";
+  } catch {
+    return "guest";
+  }
 }
+
+function loadSavedItems(owner, migrateLegacy = false) {
+  try {
+    const key = `${SAVED_ITEMS_PREFIX}${owner}`;
+    let stored = safeJson(localStorage.getItem(key) || "[]", []);
+    if (migrateLegacy && !stored.length) {
+      const legacy = safeJson(localStorage.getItem(LEGACY_SAVED_ITEMS_KEY) || "[]", []);
+      if (Array.isArray(legacy) && legacy.length) {
+        stored = legacy;
+        localStorage.setItem(key, JSON.stringify(legacy));
+        localStorage.removeItem(LEGACY_SAVED_ITEMS_KEY);
+      }
+    }
+    return Array.isArray(stored) ? stored.map(normalizeItem).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+let savedItemsOwner = initialSavedItemsOwner();
+let savedItems = loadSavedItems(savedItemsOwner, savedItemsOwner !== "guest");
 
 document.querySelector("#hero").style.backgroundImage = "url(https://image.tmdb.org/t/p/original/r57L2UBLPKcHdZQYg8tagv9XqK2.jpg)";
 
@@ -249,7 +276,21 @@ function isSaved(item) {
 }
 
 function persistSavedItems() {
-  localStorage.setItem("sandboxed-saved-items", JSON.stringify(savedItems));
+  try { localStorage.setItem(`${SAVED_ITEMS_PREFIX}${savedItemsOwner}`, JSON.stringify(savedItems)); } catch {}
+}
+
+function switchSavedItemsOwner(userId) {
+  const nextOwner = USER_ID_PATTERN.test(userId || "") ? userId : "guest";
+  if (nextOwner === savedItemsOwner) return;
+  savedItemsOwner = nextOwner;
+  savedItems = loadSavedItems(savedItemsOwner, savedItemsOwner !== "guest");
+  updateHeroList();
+  renderRows();
+  if (activeTab === "list") {
+    browseItems = savedItems;
+    setStatus(`${savedItems.length} saved title${savedItems.length === 1 ? "" : "s"}`);
+    renderGrid();
+  }
 }
 
 function toggleList(item) {
@@ -485,6 +526,7 @@ document.addEventListener("keydown", (event) => {
   else if (!modal.hidden) closePlayer();
 });
 window.addEventListener("sandboxed:resume-play", (event) => play(event.detail));
+window.addEventListener("sandboxed:account-changed", (event) => switchSavedItemsOwner(event.detail?.userId));
 
 try { adNotice.hidden = localStorage.getItem(AD_NOTICE_KEY) === "1"; } catch {}
 
