@@ -1,4 +1,4 @@
-const {ANNUAL_PRICE_USD, env, baseUrl, send, requireUser, ensureProfile, handlerError} = require("../lib/server");
+const {ANNUAL_PRICE_USD, env, baseUrl, send, requireUser, ensureProfile, db, handlerError} = require("../lib/server");
 
 module.exports = async function handler(request, response) {
   if (request.method !== "POST") return send(response, 405, {error:"Method not allowed"});
@@ -26,6 +26,20 @@ module.exports = async function handler(request, response) {
     const payload = await now.json();
     const url = payload.invoice_url || payload.pay_url;
     if (!now.ok || !url) throw Object.assign(new Error(payload?.message || "Crypto invoice could not be created"), {status:502, code:"NOWPAYMENTS_ERROR"});
+    const invoiceId = String(payload.id || payload.invoice_id || orderId);
+    await db("payment_events", {
+      method:"POST",
+      body:{
+        provider:"nowpayments_invoice",
+        external_id:invoiceId,
+        user_id:user.id,
+        status:"invoice_created",
+        amount:ANNUAL_PRICE_USD,
+        currency:"usd",
+        payload:{invoice_id:invoiceId, order_id:orderId}
+      },
+      prefer:"return=minimal"
+    });
     return send(response, 200, {url});
   } catch (error) {
     return handlerError(response, error);

@@ -43,6 +43,53 @@ function paymentEventFields(externalId, userId, payload, status, accessUntil = n
   };
 }
 
+async function processPayment(payload) {
+  const externalId = String(payload.payment_id || payload.invoice_id || payload.order_id || "");
+  if (!externalId) throw Object.assign(new Error("Missing NOWPayments transaction ID"), {status:400, code:"PAYMENT_ID_REQUIRED"});
+  const existing = await db(`payment_events?provider=eq.nowpayments&external_id=eq.${encodeURIComponent(externalId)}&select=id,status,payload`, {prefer:""});
+  let event = existing?.[0] || null;
+  if (event?.status === "finished") return {received:true, duplicate:true, userId:event.user_id || orderUserId(payload.order_id)};
+  const userId = orderUserId(payload.order_id);
+
+  if (isExpectedPayment(payload) && userId) {
+    let accessUntil = event?.payload?.access_until || "";
+    if (!accessUntil) {
+      const profiles = await db(`profiles?id=eq.${encodeURIComponent(userId)}&select=access_until`, {prefer:""});
+      const current = profiles?.[0]?.access_until ? Date.parse(profiles[0].access_until) : 0;
+      accessUntil = new Date(Math.max(Date.now(), current) + 365 * 86400000).toISOString();
+    }
+    const activating = paymentEventFields(externalId, userId, payload, "activating", accessUntil);
+    if (event) {
+      const rows = await db(`payment_events?id=eq.${encodeURIComponent(event.id)}`, {
+        method:"PATCH", body:activating, prefer:"return=representation"
+      });
+      event = rows?.[0] || event;
+    } else {
+      const rows = await db("payment_events", {method:"POST", body:activating, prefer:"return=representation"});
+      event = rows?.[0];
+    }
+    await extendAccess(userId, accessUntil, {subscription_status:"active"});
+    await db(`payment_events?id=eq.${encodeURIComponent(event.id)}`, {
+      method:"PATCH",
+      body:paymentEventFields(externalId, userId, payload, "finished", accessUntil),
+      prefer:"return=minimal"
+    });
+    return {received:true, activated:true, userId};
+  }
+
+  // NOWPayments sends several callbacks for one payment. Keep the latest
+  // status instead of treating the first non-final callback as the only one.
+  const fields = paymentEventFields(externalId, userId, payload, String(payload.payment_status || "unknown"));
+  if (event) {
+    if (event.status !== "activating") {
+      await db(`payment_events?id=eq.${encodeURIComponent(event.id)}`, {method:"PATCH", body:fields, prefer:"return=minimal"});
+    }
+  } else {
+    await db("payment_events", {method:"POST", body:fields, prefer:"return=minimal"});
+  }
+  return {received:true, userId, status:String(payload.payment_status || "unknown")};
+}
+
 module.exports = async function handler(request, response) {
   if (request.method !== "POST") return send(response, 405, {error:"Method not allowed"});
   try {
@@ -52,50 +99,9 @@ module.exports = async function handler(request, response) {
       .update(JSON.stringify(sortObject(payload)))
       .digest("hex");
     if (!safeEqual(request.headers["x-nowpayments-sig"], expected)) return send(response, 400, {error:"Invalid NOWPayments signature"});
-    const externalId = String(payload.payment_id || payload.invoice_id || payload.order_id || "");
-    if (!externalId) return send(response, 400, {error:"Missing NOWPayments transaction ID"});
-    const existing = await db(`payment_events?provider=eq.nowpayments&external_id=eq.${encodeURIComponent(externalId)}&select=id,status,payload`, {prefer:""});
-    let event = existing?.[0] || null;
-    if (event?.status === "finished") return send(response, 200, {received:true, duplicate:true});
-    const userId = orderUserId(payload.order_id);
-
-    if (isExpectedPayment(payload) && userId) {
-      let accessUntil = event?.payload?.access_until || "";
-      if (!accessUntil) {
-        const profiles = await db(`profiles?id=eq.${encodeURIComponent(userId)}&select=access_until`, {prefer:""});
-        const current = profiles?.[0]?.access_until ? Date.parse(profiles[0].access_until) : 0;
-        accessUntil = new Date(Math.max(Date.now(), current) + 365 * 86400000).toISOString();
-      }
-      const activating = paymentEventFields(externalId, userId, payload, "activating", accessUntil);
-      if (event) {
-        const rows = await db(`payment_events?id=eq.${encodeURIComponent(event.id)}`, {
-          method:"PATCH", body:activating, prefer:"return=representation"
-        });
-        event = rows?.[0] || event;
-      } else {
-        const rows = await db("payment_events", {method:"POST", body:activating, prefer:"return=representation"});
-        event = rows?.[0];
-      }
-      await extendAccess(userId, accessUntil, {subscription_status:"active"});
-      await db(`payment_events?id=eq.${encodeURIComponent(event.id)}`, {
-        method:"PATCH",
-        body:paymentEventFields(externalId, userId, payload, "finished", accessUntil),
-        prefer:"return=minimal"
-      });
-      return send(response, 200, {received:true, activated:true});
-    }
-
-    // NOWPayments sends several callbacks for one payment. Keep the latest
-    // status instead of treating the first non-final callback as the only one.
-    const fields = paymentEventFields(externalId, userId, payload, String(payload.payment_status || "unknown"));
-    if (event) {
-      if (event.status !== "activating") {
-        await db(`payment_events?id=eq.${encodeURIComponent(event.id)}`, {method:"PATCH", body:fields, prefer:"return=minimal"});
-      }
-    } else {
-      await db("payment_events", {method:"POST", body:fields, prefer:"return=minimal"});
-    }
-    return send(response, 200, {received:true});
+    const result = await processPayment(payload);
+    delete result.userId;
+    return send(response, 200, result);
   } catch (error) {
     return handlerError(response, error);
   }
@@ -104,3 +110,4 @@ module.exports = async function handler(request, response) {
 module.exports.orderUserId = orderUserId;
 module.exports.isExpectedPayment = isExpectedPayment;
 module.exports.paymentEventFields = paymentEventFields;
+module.exports.processPayment = processPayment;

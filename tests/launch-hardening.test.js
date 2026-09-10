@@ -155,3 +155,17 @@ test("NOWPayments callbacks retain status progression and a deterministic access
   assert.match(source, /method:"PATCH"/);
   assert.match(source, /activated:true/);
 });
+
+test("NOWPayments invoices can recover from a missed final callback", () => {
+  const invoice = fs.readFileSync(path.join(root, "api/nowpayments-invoice.js"), "utf8");
+  const reconcile = fs.readFileSync(path.join(root, "api/nowpayments-reconcile.js"), "utf8");
+  const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
+  const standalone = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  assert.match(invoice, /provider:"nowpayments_invoice"/);
+  assert.match(reconcile, /requireUser\(request\)/);
+  assert.match(reconcile, /orderUserId\(orderId\) !== user\.id/);
+  assert.match(reconcile, /api\.nowpayments\.io\/v1\/payment\//);
+  assert.match(reconcile, /processPayment\(payment\)/);
+  assert.match(membership, /\/api\/nowpayments-reconcile/);
+  assert.match(standalone, /\/api\/nowpayments-reconcile/);
+});

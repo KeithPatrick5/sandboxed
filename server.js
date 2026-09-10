@@ -17,6 +17,7 @@ const API_ROUTES = new Map([
   ["/api/me", require("./api/me")],
   ["/api/nowpayments-invoice", require("./api/nowpayments-invoice")],
   ["/api/nowpayments-ipn", require("./api/nowpayments-ipn")],
+  ["/api/nowpayments-reconcile", require("./api/nowpayments-reconcile")],
   ["/api/play", require("./api/play")],
   ["/api/stripe-checkout", require("./api/stripe-checkout")],
   ["/api/stripe-portal", require("./api/stripe-portal")],

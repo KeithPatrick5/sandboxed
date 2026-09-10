@@ -558,6 +558,7 @@
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1800));
       try {
+        await authorizedFetch("/api/nowpayments-reconcile", {method:"POST", body:"{}"}).catch(() => null);
         await refreshAccount();
         if (account?.profile?.state === "active") {
           renderAccount("Payment confirmed. Your membership is active.");
