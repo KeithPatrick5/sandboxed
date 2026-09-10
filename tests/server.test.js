@@ -41,6 +41,8 @@ test("access states distinguish eligible, trial, paid, and expired accounts", ()
   assert.equal(accessState({trial_started_at:new Date().toISOString(), trial_ends_at:new Date(Date.now() + 60000).toISOString()}).state, "trial");
   assert.equal(accessState({access_until:new Date(Date.now() + 60000).toISOString()}).state, "active");
   assert.equal(accessState({trial_started_at:new Date(Date.now() - 900000).toISOString(), trial_ends_at:new Date(Date.now() - 60000).toISOString()}).state, "expired");
+  assert.equal(accessState({subscription_status:"refunded", access_until:new Date(Date.now() + 60000).toISOString()}).state, "expired");
+  assert.equal(accessState({subscription_status:"disputed", access_until:new Date(Date.now() + 60000).toISOString()}).state, "expired");
 });
 
 test("playback heartbeats require current access and an authorized device", () => {

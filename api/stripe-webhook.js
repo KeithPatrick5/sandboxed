@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const {ANNUAL_PRICE_CENTS, env, send, readRawBody, safeEqual, db, updateProfile, extendAccess, handlerError} = require("../lib/server");
+const {ANNUAL_PRICE_CENTS, env, send, readRawBody, safeEqual, db, updateProfile, extendAccess, suspendMembershipAccess, handlerError} = require("../lib/server");
 
 function isExpectedCheckoutPayment(object) {
   return object?.payment_status === "paid" &&
@@ -29,6 +29,32 @@ async function eventSeen(id) {
 async function userByCustomer(customerId) {
   const rows = await db(`profiles?stripe_customer_id=eq.${encodeURIComponent(customerId)}&select=id`, {prefer:""});
   return rows?.[0]?.id || "";
+}
+
+async function stripeObject(path) {
+  const response = await fetch(`https://api.stripe.com/v1/${path}`, {
+    headers:{Authorization:`Bearer ${env("STRIPE_SECRET_KEY")}`},
+    signal:AbortSignal.timeout(12000)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(payload?.error?.message || "Stripe record could not be retrieved"), {status:502, code:"STRIPE_ERROR"});
+  return payload;
+}
+
+async function customerForAccessEvent(eventType, object) {
+  if (object?.customer) return String(object.customer);
+  if (String(eventType).startsWith("charge.dispute.") && object?.charge) {
+    const charge = await stripeObject(`charges/${encodeURIComponent(String(object.charge))}`);
+    return String(charge?.customer || "");
+  }
+  return "";
+}
+
+function stripeAccessAction(eventType, object) {
+  if (eventType === "charge.refunded" && Number(object?.amount_refunded) > 0) return "refunded";
+  if (eventType === "charge.dispute.created") return "disputed";
+  if (eventType === "charge.dispute.closed") return object?.status === "won" ? "active" : "disputed";
+  return "";
 }
 
 module.exports = async function handler(request, response) {
@@ -69,6 +95,18 @@ module.exports = async function handler(request, response) {
       if (userId) await updateProfile(userId, {subscription_status:"cancelled"});
     }
 
+    const accessAction = stripeAccessAction(event.type, object);
+    if (accessAction) {
+      if (!userId) {
+        const customerId = await customerForAccessEvent(event.type, object);
+        if (customerId) userId = await userByCustomer(customerId);
+      }
+      if (userId) {
+        if (accessAction === "active") await updateProfile(userId, {subscription_status:"active"});
+        else await suspendMembershipAccess(userId, accessAction);
+      }
+    }
+
     await db("payment_events", {
       method:"POST",
       body:{
@@ -83,7 +121,10 @@ module.exports = async function handler(request, response) {
           created:event.created || null,
           livemode:Boolean(event.livemode),
           customer:object.customer || null,
-          subscription:object.subscription || null
+          subscription:object.subscription || null,
+          charge:object.charge || (String(object.object || "") === "charge" ? object.id : null),
+          dispute_status:object.status || null,
+          amount_refunded:Number(object.amount_refunded) || null
         }
       },
       prefer:"return=minimal"
@@ -97,3 +138,4 @@ module.exports = async function handler(request, response) {
 module.exports.config = {api:{bodyParser:false}};
 module.exports.isExpectedCheckoutPayment = isExpectedCheckoutPayment;
 module.exports.isExpectedInvoicePayment = isExpectedInvoicePayment;
+module.exports.stripeAccessAction = stripeAccessAction;

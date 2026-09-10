@@ -114,6 +114,17 @@ test("Stripe access requires the expected paid USD amount", () => {
   assert.equal(stripeWebhook.isExpectedInvoicePayment({currency:"usd", amount_paid:2999}), false);
 });
 
+test("Stripe refunds and disputes suspend access while won disputes restore it", () => {
+  assert.equal(stripeWebhook.stripeAccessAction("charge.refunded", {amount_refunded:3000}), "refunded");
+  assert.equal(stripeWebhook.stripeAccessAction("charge.refunded", {amount_refunded:100}), "refunded");
+  assert.equal(stripeWebhook.stripeAccessAction("charge.refunded", {amount_refunded:0}), "");
+  assert.equal(stripeWebhook.stripeAccessAction("charge.dispute.created", {status:"needs_response"}), "disputed");
+  assert.equal(stripeWebhook.stripeAccessAction("charge.dispute.closed", {status:"lost"}), "disputed");
+  assert.equal(stripeWebhook.stripeAccessAction("charge.dispute.closed", {status:"won"}), "active");
+  const server = fs.readFileSync(path.join(root, "lib/server.js"), "utf8");
+  assert.match(server, /suspendMembershipAccess[\s\S]*watch_sessions/);
+});
+
 test("checkout prices are generated from the same server-side $30 policy", () => {
   const stripeCheckout = fs.readFileSync(path.join(root, "api/stripe-checkout.js"), "utf8");
   const nowPaymentsInvoice = fs.readFileSync(path.join(root, "api/nowpayments-invoice.js"), "utf8");
