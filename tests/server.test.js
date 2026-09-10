@@ -12,7 +12,9 @@ const {
   hasAvailableStreamSlot,
   validatePlaybackAuthorization,
   secureHash,
-  safeEqual
+  safeEqual,
+  signedDeviceId,
+  verifiedDeviceId
 } = require("../lib/server");
 
 test("membership policy constants match the approved rules", () => {
@@ -64,4 +66,13 @@ test("device signals are hashed and compared without plain-text storage", () => 
   assert.notEqual(first, second);
   assert.equal(safeEqual(first, first), true);
   assert.equal(safeEqual(first, second), false);
+});
+
+test("registered device identity requires a valid server signature", () => {
+  const id = "4df731dc-1e8c-4897-a2c2-6e436b1b985c";
+  const signed = signedDeviceId(id);
+  const request = {headers:{cookie:`theme=dark; __Host-sandboxed_device=${signed}`}};
+  assert.equal(verifiedDeviceId(request), id);
+  assert.equal(verifiedDeviceId({headers:{cookie:`__Host-sandboxed_device=${signed}tampered`}}), "");
+  assert.equal(verifiedDeviceId({headers:{cookie:"__Host-sandboxed_device=attacker-chosen.invalid"}}), "");
 });

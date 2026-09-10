@@ -26,7 +26,7 @@ async function handler(request, response) {
     const {user} = await requireUser(request);
     const body = await readBody(request);
     let profile = await ensureProfile(user);
-    const device = await registerDevice(user.id, body, request);
+    const device = await registerDevice(user.id, body, request, response);
     let access = accessState(profile);
     if (access.state === "eligible") {
       profile = await startTrial(profile, device);

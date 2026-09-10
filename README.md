@@ -6,7 +6,7 @@ Sandboxed is an isolated movie and series interface with device-specific playbac
 
 - Email/password accounts with verified email, matching-password confirmation, password-manager support, and recovery through Supabase Auth
 - One three-day no-card trial beginning on first playback
-- Repeat-trial protection using hashed device, browser-fingerprint, and network signals; blocked trials receive a clear payment-required message
+- Repeat-trial protection using a server-signed HttpOnly device cookie plus hashed browser-fingerprint and network signals; blocked trials receive a clear payment-required message
 - Four registered devices, two simultaneous streams, and two device replacements per rolling 30 days
 - $30 USD yearly Stripe subscription with Checkout, verified webhooks, customer billing portal, refund/dispute suspension, and access through the paid period after cancellation
 - $30 USD NOWPayments cryptocurrency purchase granting 365 days, with verified multi-status IPN callbacks and authenticated missed-callback reconciliation

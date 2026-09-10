@@ -16,7 +16,7 @@ module.exports = async function handler(request, response) {
     const {user} = await requireUser(request);
     const body = await readBody(request);
     const profile = await ensureProfile(user);
-    const device = await registerDevice(user.id, body, request);
+    const device = await registerDevice(user.id, body, request, response);
     const devices = await listDevices(user.id);
     const profileState = accessState(profile);
     const eligibility = profileState.state === "eligible"

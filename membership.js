@@ -1,6 +1,6 @@
 (() => {
   const SESSION_KEY = "sandboxed-auth-session";
-  const DEVICE_KEY = "sandboxed-device-id";
+  const LEGACY_DEVICE_KEY = "sandboxed-device-id";
   const modal = document.querySelector("#membership-modal");
   const content = document.querySelector("#membership-content");
   const accountButton = document.querySelector("#account-button");
@@ -84,14 +84,8 @@
     return payload;
   }
 
-  function deviceId() {
-    let id = "";
-    try { id = localStorage.getItem(DEVICE_KEY) || ""; } catch {}
-    if (!id) {
-      id = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-      try { localStorage.setItem(DEVICE_KEY, id); } catch {}
-    }
-    return id;
+  function legacyDeviceId() {
+    try { return localStorage.getItem(LEGACY_DEVICE_KEY) || ""; } catch { return ""; }
   }
 
   async function fingerprint() {
@@ -157,7 +151,7 @@
   async function devicePayload() {
     const [browserFingerprint, stableFingerprint] = await Promise.all([fingerprint(), fingerprintV2()]);
     return {
-      deviceId:deviceId(),
+      deviceId:legacyDeviceId(),
       fingerprint:browserFingerprint,
       fingerprintV2:stableFingerprint,
       deviceName:deviceName()
