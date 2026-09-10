@@ -1,13 +1,13 @@
-SANDBOXED NAMECHEAP UPDATE
+SANDBOXED PAYMENT + WWW FOLLOW-UP UPDATE
 
 Do these in this order:
 
-1. Open the Sandboxed project in Supabase.
-2. Open SQL Editor, paste the entire supabase-setup.sql file, and run it.
-3. In Namecheap cPanel File Manager, open /home/dropdebs/sandboxed.
-4. Upload Sandboxed-signup-trial-fix-ready.zip into that folder.
-5. Extract it there. The api and lib folders should merge with the existing folders.
-6. In cPanel Setup Node.js App, restart sandboxed.lol.
+1. In Namecheap cPanel File Manager, open /home/dropdebs/sandboxed.
+2. Upload Sandboxed-payment-www-fix-ready.zip into that folder.
+3. Extract it into /home/dropdebs/sandboxed and allow the four files to overwrite.
+4. In cPanel Setup Node.js App, confirm the startup file is cpanel.js.
+5. Restart sandboxed.lol.
 
 Do not extract the ZIP in /home/dropdebs or public_html.
 Do not delete or replace the environment variables.
+No Supabase SQL changes are required for this follow-up update.

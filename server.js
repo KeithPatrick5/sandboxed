@@ -104,6 +104,14 @@ async function app(request, response) {
     return sendPlain(response, 400, "Bad request");
   }
 
+  const hostname = String(request.headers.host || "").split(":")[0].toLowerCase();
+  if (hostname === "www.sandboxed.lol") {
+    response.statusCode = 308;
+    response.setHeader("Location", `https://sandboxed.lol${url.pathname}${url.search}`);
+    response.setHeader("Cache-Control", "public, max-age=3600");
+    return response.end();
+  }
+
   if (url.pathname === "/healthz") {
     if (request.method !== "GET" && request.method !== "HEAD") return sendPlain(response, 405, "Method not allowed");
     response.statusCode = 200;

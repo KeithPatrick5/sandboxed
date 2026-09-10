@@ -362,7 +362,9 @@
       setMessage("Opening secure checkout…");
       try {
         const endpoint = button.dataset.checkout === "stripe" ? "/api/stripe-checkout" : "/api/nowpayments-invoice";
-        const payload = await authorizedFetch(endpoint, {method:"POST"});
+        // Namecheap/LiteSpeed rejects bodyless POST requests before they reach
+        // the Node app. An empty JSON object keeps checkout requests routable.
+        const payload = await authorizedFetch(endpoint, {method:"POST", body:"{}"});
         location.href = payload.url;
       } catch (error) {
         setMessage(error.message, true);
@@ -404,7 +406,7 @@
     content.querySelector("#billing-portal")?.addEventListener("click", async (event) => {
       event.currentTarget.disabled = true;
       try {
-        const payload = await authorizedFetch("/api/stripe-portal", {method:"POST"});
+        const payload = await authorizedFetch("/api/stripe-portal", {method:"POST", body:"{}"});
         location.href = payload.url;
       } catch (error) {
         setMessage(error.message, true);

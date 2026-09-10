@@ -58,6 +58,12 @@ test("public authentication actions have per-network abuse limits", () => {
   assert.match(auth, /auth-recovery.*5.*3600/);
 });
 
+test("payment and billing requests include JSON so LiteSpeed routes their POSTs", () => {
+  const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
+  assert.match(membership, /authorizedFetch\(endpoint, \{method:"POST", body:"\{\}"\}\)/);
+  assert.match(membership, /authorizedFetch\("\/api\/stripe-portal", \{method:"POST", body:"\{\}"\}\)/);
+});
+
 test("client IP uses the proxy-appended address instead of a spoofed first value", () => {
   assert.equal(clientIp({headers:{"x-forwarded-for":"198.51.100.8, 203.0.113.27"}, socket:{remoteAddress:"127.0.0.1"}}), "203.0.113.27");
   assert.equal(clientIp({headers:{"x-forwarded-for":"203.0.113.27"}, socket:{remoteAddress:"127.0.0.1"}}), "203.0.113.27");

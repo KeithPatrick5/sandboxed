@@ -46,6 +46,25 @@ test("standalone server adapts query strings and Vercel response helpers", async
   });
 });
 
+test("www requests redirect to the canonical domain without losing the path", async () => {
+  await withServer(async (origin) => {
+    const target = new URL(origin);
+    const response = await new Promise((resolve, reject) => {
+      const request = http.request({
+        hostname:target.hostname,
+        port:target.port,
+        path:"/terms?from=www",
+        headers:{host:"www.sandboxed.lol"}
+      }, resolve);
+      request.on("error", reject);
+      request.end();
+    });
+    response.resume();
+    assert.equal(response.statusCode, 308);
+    assert.equal(response.headers.location, "https://sandboxed.lol/terms?from=www");
+  });
+});
+
 test("standalone server preserves JSON and raw webhook request bodies", async () => {
   await withServer(async (origin) => {
     const auth = await fetch(`${origin}/api/auth`, {
