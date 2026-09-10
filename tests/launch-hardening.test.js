@@ -25,8 +25,13 @@ test("the UI and catalog API do not claim a fake indexed-title count", () => {
 
 test("reactivating a removed device preserves its replacement history", () => {
   const server = fs.readFileSync(path.join(root, "lib/server.js"), "utf8");
-  assert.match(server, /retired-device:/);
-  assert.doesNotMatch(server, /revoked_at\s*:\s*null/);
+  const schema = fs.readFileSync(path.join(root, "supabase-setup.sql"), "utf8");
+  assert.match(server, /rpc\/register_device_atomic/);
+  assert.match(server, /rpc\/revoke_device_atomic/);
+  assert.match(schema, /device_key_hash = 'retired:'/);
+  assert.match(schema, /pg_advisory_xact_lock[\s\S]*register_device_atomic|register_device_atomic[\s\S]*pg_advisory_xact_lock/i);
+  assert.match(schema, /revoke all on function public\.register_device_atomic[\s\S]*from public, anon, authenticated/i);
+  assert.match(schema, /revoke all on function public\.revoke_device_atomic[\s\S]*from public, anon, authenticated/i);
 });
 
 test("signup supports password managers and rejects mismatched confirmation", () => {
