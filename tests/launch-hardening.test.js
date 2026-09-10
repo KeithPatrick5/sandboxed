@@ -48,9 +48,15 @@ test("repeat-trial denial is shown before playback and does not masquerade as a 
 
 test("stream-limit errors use a dedicated message instead of the account screen", () => {
   const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
+  const server = fs.readFileSync(path.join(root, "lib/server.js"), "utf8");
+  const schema = fs.readFileSync(path.join(root, "supabase-setup.sql"), "utf8");
   assert.match(membership, /view === "stream-limit"/);
   assert.match(membership, /error\.code === "STREAM_LIMIT"/);
   assert.match(membership, /openModal\("stream-limit"/);
+  assert.match(server, /rpc\/begin_watch_session_atomic/);
+  assert.match(schema, /pg_advisory_xact_lock/);
+  assert.match(schema, /revoke all on function public\.begin_watch_session_atomic[\s\S]*from public, anon, authenticated/i);
+  assert.match(schema, /grant execute on function public\.begin_watch_session_atomic[\s\S]*to service_role/i);
 });
 
 test("a rejected heartbeat unloads the active player", () => {
