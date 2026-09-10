@@ -110,3 +110,17 @@ test("NOWPayments access requires a finished $30 USD order for a valid user", ()
   assert.equal(nowPaymentsWebhook.isExpectedPayment({payment_status:"finished", price_currency:"usd", price_amount:1}), false);
   assert.equal(nowPaymentsWebhook.isExpectedPayment({payment_status:"confirming", price_currency:"usd", price_amount:30}), false);
 });
+
+test("NOWPayments callbacks retain status progression and a deterministic access date", () => {
+  const fields = nowPaymentsWebhook.paymentEventFields("payment-1", "user-1", {
+    payment_status:"finished",
+    price_currency:"usd",
+    price_amount:30
+  }, "activating", "2027-09-10T00:00:00.000Z");
+  assert.equal(fields.status, "activating");
+  assert.equal(fields.payload.access_until, "2027-09-10T00:00:00.000Z");
+  const source = fs.readFileSync(path.join(root, "api/nowpayments-ipn.js"), "utf8");
+  assert.match(source, /select=id,status,payload/);
+  assert.match(source, /method:"PATCH"/);
+  assert.match(source, /activated:true/);
+});
