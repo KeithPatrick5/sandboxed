@@ -793,6 +793,8 @@ input:focus-visible {
   max-width: 420px;
   margin: 0;
   padding-right: 34px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: clamp(1.6rem, 6vw, 2.3rem);
   line-height: 1.08;
   letter-spacing: -0.04em;

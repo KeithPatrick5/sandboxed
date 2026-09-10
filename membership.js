@@ -7,7 +7,7 @@
   const statusButton = document.querySelector("#membership-status");
   const closeButton = document.querySelector("#close-membership");
 
-  let config = {membershipEnabled:false, annualPrice:20, currency:"USD", maxDevices:4, maxStreams:2};
+  let config = {membershipEnabled:false, annualPrice:30, currency:"USD", maxDevices:4, maxStreams:2};
   let configLoaded = false;
   let session = loadSession();
   let account = null;
@@ -169,11 +169,19 @@
     return new Intl.DateTimeFormat(undefined, {dateStyle:"medium", timeStyle:"short"}).format(new Date(value));
   }
 
+  function trialUnavailable() {
+    return account?.profile?.state === "eligible" && account?.trialEligibility?.eligible === false;
+  }
+
+  function annualPrice() {
+    return Number(config.annualPrice) || 30;
+  }
+
   function statusLabel(profile) {
     if (!profile) return "";
     if (profile.state === "active") return "ACTIVE";
     if (profile.state === "expired") return "EXPIRED";
-    if (profile.state === "eligible") return "3-DAY TRIAL";
+    if (profile.state === "eligible") return trialUnavailable() ? "PAYMENT REQUIRED" : "3-DAY TRIAL";
     const hours = Math.max(1, Math.ceil((Date.parse(profile.trialEndsAt) - Date.now()) / 3600000));
     return hours > 24 ? `${Math.ceil(hours / 24)} DAYS LEFT` : `${hours}H LEFT`;
   }
@@ -202,6 +210,7 @@
     else if (view === "recovery") renderRecovery(message);
     else if (view === "paywall") renderPaywall(message);
     else if (view === "device-limit") renderDeviceLimit(message);
+    else if (view === "stream-limit") renderStreamLimit(message);
     else if (view === "setup") renderSetup();
     else if (account) renderAccount(message);
     else if (config.membershipEnabled) renderAuth("login", message);
@@ -267,6 +276,11 @@
         const next = normalizeSession(payload.session);
         saveSession(next);
         await refreshAccount();
+        if (trialUnavailable()) {
+          pendingPlay = null;
+          renderPaywall(account.trialEligibility.message);
+          return;
+        }
         closeModal();
         if (pendingPlay) {
           const item = pendingPlay;
@@ -346,7 +360,7 @@
 
   function paymentButtons() {
     return `<div class="payment-actions">
-      <button class="membership-primary" type="button" data-checkout="stripe" ${config.stripeEnabled ? "" : "disabled"}>Pay $20 with card</button>
+      <button class="membership-primary" type="button" data-checkout="stripe" ${config.stripeEnabled ? "" : "disabled"}>Pay $${annualPrice()} with card</button>
       <button class="membership-secondary" type="button" data-checkout="nowpayments" ${config.nowPaymentsEnabled ? "" : "disabled"}>Pay with Bitcoin or crypto</button>
     </div>${!config.stripeEnabled || !config.nowPaymentsEnabled ? '<p class="membership-small">Payment buttons activate when the private processor keys are connected.</p>' : ""}`;
   }
@@ -374,9 +388,10 @@
   }
 
   function renderPaywall(message = "") {
-    content.innerHTML = `${panelHeader("TRIAL COMPLETE", "Keep Sandboxed for $20 a year", "Your account, saved list, and four registered devices stay available after payment.")}
-      <div class="membership-price"><strong>$20</strong><span>per year</span></div>${paymentButtons()}
-      <ul class="membership-features"><li>Four registered devices</li><li>Two simultaneous streams</li><li>Card, Bitcoin, or other supported crypto</li></ul>
+    const blocked = trialUnavailable();
+    content.innerHTML = `${panelHeader(blocked ? "TRIAL UNAVAILABLE" : "TRIAL COMPLETE", `Keep Sandboxed for $${annualPrice()} a year`, blocked ? "This account can still subscribe and use Sandboxed normally." : "Your account, saved list, and four registered devices stay available after payment.")}
+      <div class="membership-price"><strong>$${annualPrice()}</strong><span>per year</span></div>${paymentButtons()}
+      <ul class="membership-features"><li>Four registered devices</li><li>Two simultaneous streams</li><li>Card, Bitcoin, or other supported crypto</li><li>Crypto network minimums may vary</li></ul>
       ${supportLine()}
       <button class="membership-text-button" type="button" id="paywall-signout">Sign out</button><p class="membership-message" id="membership-message"></p>`;
     bindPaymentButtons();
@@ -392,10 +407,12 @@
       : profile.state === "trial"
         ? `Free access ends ${formatDate(profile.trialEndsAt)}`
         : profile.state === "eligible"
-          ? "Your three days begin when your first video starts."
+          ? trialUnavailable()
+            ? account.trialEligibility.message
+            : "Your three days begin when your first video starts."
           : "Your free trial has ended.";
     const devices = (account.devices || []).map((device) => `<li><span><strong>${escapeHtml(device.name)}</strong><small>${device.id === account.deviceId ? "This device" : `Last used ${formatDate(device.last_seen_at)}`}</small></span>${device.id === account.deviceId ? '<b>Current</b>' : `<button type="button" data-remove-device="${escapeHtml(device.id)}">Remove</button>`}</li>`).join("");
-    content.innerHTML = `${panelHeader("ACCOUNT", escapeHtml(account.user.email), statusCopy)}
+    content.innerHTML = `${panelHeader("ACCOUNT", account.user.email, statusCopy)}
       <div class="account-status"><span>${escapeHtml(statusLabel(profile))}</span><small>${config.maxDevices} devices · ${config.maxStreams} streams at once</small></div>
       <div class="device-heading"><strong>Devices</strong><span>${account.devices.length}/${config.maxDevices}</span></div><ul class="device-list">${devices || "<li>No registered devices</li>"}</ul>
       ${profile.state === "active" && account.billing?.hasStripeCustomer ? '<button class="membership-secondary" type="button" id="billing-portal">Manage card subscription</button>' : profile.state === "active" ? '<p class="membership-small">Crypto membership active. Renew from this account before it expires.</p>' : paymentButtons()}
@@ -438,6 +455,14 @@
     } catch (error) {
       setMessage(error.message, true);
     }
+  }
+
+  function renderStreamLimit(message = "") {
+    content.innerHTML = `${panelHeader("STREAM LIMIT", `${config.maxStreams} streams are already playing`, message || "Stop playback on another device, then try again. Stale streams clear automatically within three minutes.")}
+      <button class="membership-primary" type="button" id="stream-limit-close">Got it</button>
+      <button class="membership-text-button" type="button" id="stream-limit-account">Open account</button>`;
+    content.querySelector("#stream-limit-close").addEventListener("click", closeModal);
+    content.querySelector("#stream-limit-account").addEventListener("click", () => renderAccount());
   }
 
   async function refreshAccount() {
@@ -484,6 +509,8 @@
         openModal("paywall", error.message);
       } else if (error.code === "DEVICE_LIMIT") {
         openModal("device-limit", error.message);
+      } else if (error.code === "STREAM_LIMIT") {
+        openModal("stream-limit", error.message);
       } else {
         openModal("account", error.message);
       }
@@ -563,7 +590,7 @@
   }
 
   accountButton.addEventListener("click", () => openModal("account"));
-  statusButton.addEventListener("click", () => openModal(account?.profile?.state === "expired" ? "paywall" : "account"));
+  statusButton.addEventListener("click", () => openModal(account?.profile?.state === "expired" || trialUnavailable() ? "paywall" : "account"));
   closeButton.addEventListener("click", closeModal);
   modal.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !modal.hidden) closeModal(); });

@@ -1,4 +1,4 @@
-const {env, baseUrl, send, requireUser, ensureProfile, handlerError} = require("../lib/server");
+const {ANNUAL_PRICE_CENTS, env, baseUrl, send, requireUser, ensureProfile, handlerError} = require("../lib/server");
 
 module.exports = async function handler(request, response) {
   if (request.method !== "POST") return send(response, 405, {error:"Method not allowed"});
@@ -15,15 +15,11 @@ module.exports = async function handler(request, response) {
     params.set("subscription_data[metadata][user_id]", user.id);
     if (profile.stripe_customer_id) params.set("customer", profile.stripe_customer_id);
     else params.set("customer_email", user.email);
-    if (env("STRIPE_PRICE_ID")) {
-      params.set("line_items[0][price]", env("STRIPE_PRICE_ID"));
-    } else {
-      params.set("line_items[0][price_data][currency]", "usd");
-      params.set("line_items[0][price_data][unit_amount]", "2000");
-      params.set("line_items[0][price_data][recurring][interval]", "year");
-      params.set("line_items[0][price_data][product_data][name]", "Sandboxed annual membership");
-      params.set("line_items[0][price_data][product_data][description]", "One year of access to the Sandboxed media interface");
-    }
+    params.set("line_items[0][price_data][currency]", "usd");
+    params.set("line_items[0][price_data][unit_amount]", String(ANNUAL_PRICE_CENTS));
+    params.set("line_items[0][price_data][recurring][interval]", "year");
+    params.set("line_items[0][price_data][product_data][name]", "Sandboxed annual membership");
+    params.set("line_items[0][price_data][product_data][description]", "One year of access to the Sandboxed media interface");
     params.set("line_items[0][quantity]", "1");
     const stripe = await fetch("https://api.stripe.com/v1/checkout/sessions", {
       method:"POST",

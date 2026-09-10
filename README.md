@@ -4,12 +4,14 @@ Sandboxed is an isolated movie and series interface with device-specific playbac
 
 ## Membership
 
-- Email/password accounts with verified email through Supabase Auth
-- Three-day no-card trial beginning on first playback
-- Four registered devices, two simultaneous streams, and two device replacements per 30 days
-- $20 yearly Stripe subscription
-- $20 NOWPayments cryptocurrency purchase granting 365 days
-- Server-side entitlement checks, hashed device/IP abuse signals, restricted database tables, and verified payment callbacks
+- Email/password accounts with verified email, matching-password confirmation, password-manager support, and recovery through Supabase Auth
+- One three-day no-card trial beginning on first playback
+- Repeat-trial protection using hashed device, browser-fingerprint, and network signals; blocked trials receive a clear payment-required message
+- Four registered devices, two simultaneous streams, and two device replacements per rolling 30 days
+- $30 USD yearly Stripe subscription with Checkout, verified webhooks, customer billing portal, and access through the paid period after cancellation
+- $30 USD NOWPayments cryptocurrency purchase granting 365 days, with verified IPN callbacks
+- Server-side playback authorization, stale-session cleanup, distinct-device stream counting, and fail-closed access checks
+- Long account identifiers wrap safely on desktop and mobile
 
 Playback fails closed until all required Supabase variables and `DEVICE_HASH_SECRET` are present. If membership configuration or its client script is unavailable, the player remains locked instead of falling back to a direct third-party URL.
 
@@ -21,7 +23,7 @@ npm start
 
 Open `http://localhost:3000`. This runs the same standalone Node application used by Namecheap cPanel.
 
-## Deploy
+## Vercel deployment
 
 Deploy the folder root to Vercel with no build command. Set `TMDB_READ_TOKEN` (recommended) or `TMDB_API_KEY` for current metadata.
 
@@ -33,15 +35,19 @@ Deploy the folder root to Vercel with no build command. Set `TMDB_READ_TOKEN` (r
 
 Required membership variables are `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `DEVICE_HASH_SECRET`. Stripe and NOWPayments activate independently when their respective variables are present.
 
-## Namecheap Shared Hosting
+## Namecheap shared hosting
 
 The repository also runs as a single cPanel Node application without third-party packages.
 
 1. In cPanel, open **Setup Node.js App** and select Node.js 20 or newer.
-2. Set the application root to the uploaded repository folder, production mode, and `server.js` as the startup file.
+2. Set the application root to `/home/dropdebs/sandboxed`, production mode, and `cpanel.js` as the startup file.
 3. Add the variables from `.env.example` through cPanel; do not upload a populated `.env` file.
-4. Start or restart the application and confirm `/healthz` returns `{\"ok\":true}`.
-5. Update `SITE_URL`, Supabase redirect URLs, Stripe’s webhook URL, and the domain only after the temporary deployment passes testing.
+4. Set `SITE_URL=https://sandboxed.lol`. Configure Supabase redirects for that domain and send Stripe webhooks to `https://sandboxed.lol/api/stripe-webhook`.
+5. Start or restart the application and confirm `https://sandboxed.lol/healthz` returns `{\"ok\":true}`.
+
+The standalone server redirects `www.sandboxed.lol` to the apex domain and includes the security, cache-control, request-size, and API routing behavior required by cPanel/LiteSpeed. Payment POST requests intentionally send an empty JSON body so LiteSpeed forwards them to the Node application.
+
+For packaged updates, upload the provided ZIP while already inside `/home/dropdebs/sandboxed`, extract it to that same directory, allow overwrites, and restart the Node application. Do not extract into `/home/dropdebs` or `public_html`. Do not replace the configured environment variables.
 
 ## Playback
 

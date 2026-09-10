@@ -1,5 +1,6 @@
 const {
   TRIAL_HOURS,
+  ANNUAL_PRICE_USD,
   MAX_DEVICES,
   MAX_STREAMS,
   MAX_REPLACEMENTS_30_DAYS,
@@ -13,7 +14,7 @@ module.exports = async function handler(request, response) {
   return send(response, 200, {
     membershipEnabled:membershipConfigured(),
     trialHours:TRIAL_HOURS,
-    annualPrice:20,
+    annualPrice:ANNUAL_PRICE_USD,
     currency:"USD",
     maxDevices:MAX_DEVICES,
     maxStreams:MAX_STREAMS,

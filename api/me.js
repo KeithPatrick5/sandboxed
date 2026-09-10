@@ -5,6 +5,7 @@ const {
   ensureProfile,
   accessState,
   registerDevice,
+  trialEligibility,
   listDevices,
   handlerError
 } = require("../lib/server");
@@ -17,9 +18,14 @@ module.exports = async function handler(request, response) {
     const profile = await ensureProfile(user);
     const device = await registerDevice(user.id, body, request);
     const devices = await listDevices(user.id);
+    const profileState = accessState(profile);
+    const eligibility = profileState.state === "eligible"
+      ? await trialEligibility(profile, device)
+      : null;
     return send(response, 200, {
       user:{id:user.id, email:user.email},
-      profile:accessState(profile),
+      profile:profileState,
+      trialEligibility:eligibility,
       billing:{hasStripeCustomer:Boolean(profile.stripe_customer_id), status:profile.subscription_status},
       deviceId:device.id,
       devices

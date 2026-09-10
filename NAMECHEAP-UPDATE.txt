@@ -1,13 +1,13 @@
-SANDBOXED PAYMENT + WWW FOLLOW-UP UPDATE
+SANDBOXED $30 + STREAM/TRIAL UX UPDATE
 
 Do these in this order:
 
 1. In Namecheap cPanel File Manager, open /home/dropdebs/sandboxed.
-2. Upload Sandboxed-payment-www-fix-ready.zip into that folder.
-3. Extract it into /home/dropdebs/sandboxed and allow the four files to overwrite.
+2. Upload Sandboxed-30-stream-trial-fix-ready.zip into that folder.
+3. Extract it into /home/dropdebs/sandboxed and allow the files to overwrite.
 4. In cPanel Setup Node.js App, confirm the startup file is cpanel.js.
 5. Restart sandboxed.lol.
 
 Do not extract the ZIP in /home/dropdebs or public_html.
 Do not delete or replace the environment variables.
-No Supabase SQL changes are required for this follow-up update.
+No Supabase SQL changes are required for this update.

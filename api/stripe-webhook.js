@@ -1,7 +1,5 @@
 const crypto = require("crypto");
-const {env, send, readRawBody, safeEqual, db, updateProfile, extendAccess, handlerError} = require("../lib/server");
-
-const ANNUAL_PRICE_CENTS = 2000;
+const {ANNUAL_PRICE_CENTS, env, send, readRawBody, safeEqual, db, updateProfile, extendAccess, handlerError} = require("../lib/server");
 
 function isExpectedCheckoutPayment(object) {
   return object?.payment_status === "paid" &&

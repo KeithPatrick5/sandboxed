@@ -38,6 +38,21 @@ test("signup supports password managers and rejects mismatched confirmation", ()
   assert.match(membership, /Passwords do not match\./);
 });
 
+test("repeat-trial denial is shown before playback and does not masquerade as a new trial", () => {
+  const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
+  const me = fs.readFileSync(path.join(root, "api/me.js"), "utf8");
+  assert.match(me, /trialEligibility/);
+  assert.match(membership, /TRIAL UNAVAILABLE/);
+  assert.match(membership, /PAYMENT REQUIRED/);
+});
+
+test("stream-limit errors use a dedicated message instead of the account screen", () => {
+  const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
+  assert.match(membership, /view === "stream-limit"/);
+  assert.match(membership, /error\.code === "STREAM_LIMIT"/);
+  assert.match(membership, /openModal\("stream-limit"/);
+});
+
 test("trial claims survive account deletion and remain cross-account", () => {
   const schema = fs.readFileSync(path.join(root, "supabase-setup.sql"), "utf8");
   const server = fs.readFileSync(path.join(root, "lib/server.js"), "utf8");
@@ -71,19 +86,27 @@ test("client IP uses the proxy-appended address instead of a spoofed first value
 });
 
 test("Stripe access requires the expected paid USD amount", () => {
-  assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"paid", currency:"usd", amount_total:2000}), true);
+  assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"paid", currency:"usd", amount_total:3000}), true);
   assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"no_payment_required", currency:"usd", amount_total:0}), false);
   assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"paid", currency:"usd", amount_total:100}), false);
-  assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"paid", currency:"eur", amount_total:2000}), false);
-  assert.equal(stripeWebhook.isExpectedInvoicePayment({currency:"usd", amount_paid:2000}), true);
-  assert.equal(stripeWebhook.isExpectedInvoicePayment({currency:"usd", amount_paid:1999}), false);
+  assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"paid", currency:"eur", amount_total:3000}), false);
+  assert.equal(stripeWebhook.isExpectedInvoicePayment({currency:"usd", amount_paid:3000}), true);
+  assert.equal(stripeWebhook.isExpectedInvoicePayment({currency:"usd", amount_paid:2999}), false);
 });
 
-test("NOWPayments access requires a finished $20 USD order for a valid user", () => {
+test("checkout prices are generated from the same server-side $30 policy", () => {
+  const stripeCheckout = fs.readFileSync(path.join(root, "api/stripe-checkout.js"), "utf8");
+  const nowPaymentsInvoice = fs.readFileSync(path.join(root, "api/nowpayments-invoice.js"), "utf8");
+  assert.match(stripeCheckout, /ANNUAL_PRICE_CENTS/);
+  assert.doesNotMatch(stripeCheckout, /STRIPE_PRICE_ID/);
+  assert.match(nowPaymentsInvoice, /price_amount:ANNUAL_PRICE_USD/);
+});
+
+test("NOWPayments access requires a finished $30 USD order for a valid user", () => {
   const userId = "6a63a091-d96d-44dc-9823-bdd012345678";
   assert.equal(nowPaymentsWebhook.orderUserId(`sandboxed:${userId}:1788979000000`), userId);
   assert.equal(nowPaymentsWebhook.orderUserId("sandboxed:not-a-user:1788979000000"), "");
-  assert.equal(nowPaymentsWebhook.isExpectedPayment({payment_status:"finished", price_currency:"usd", price_amount:20}), true);
+  assert.equal(nowPaymentsWebhook.isExpectedPayment({payment_status:"finished", price_currency:"usd", price_amount:30}), true);
   assert.equal(nowPaymentsWebhook.isExpectedPayment({payment_status:"finished", price_currency:"usd", price_amount:1}), false);
-  assert.equal(nowPaymentsWebhook.isExpectedPayment({payment_status:"confirming", price_currency:"usd", price_amount:20}), false);
+  assert.equal(nowPaymentsWebhook.isExpectedPayment({payment_status:"confirming", price_currency:"usd", price_amount:30}), false);
 });

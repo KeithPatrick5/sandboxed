@@ -1,4 +1,4 @@
-const {env, baseUrl, send, requireUser, ensureProfile, handlerError} = require("../lib/server");
+const {ANNUAL_PRICE_USD, env, baseUrl, send, requireUser, ensureProfile, handlerError} = require("../lib/server");
 
 module.exports = async function handler(request, response) {
   if (request.method !== "POST") return send(response, 405, {error:"Method not allowed"});
@@ -13,7 +13,7 @@ module.exports = async function handler(request, response) {
       method:"POST",
       headers:{"x-api-key":env("NOWPAYMENTS_API_KEY"), "Content-Type":"application/json"},
       body:JSON.stringify({
-        price_amount:20,
+        price_amount:ANNUAL_PRICE_USD,
         price_currency:"usd",
         order_id:orderId,
         order_description:"Sandboxed annual membership",

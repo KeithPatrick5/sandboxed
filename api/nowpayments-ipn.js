@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const {env, send, readBody, safeEqual, db, extendAccess, handlerError} = require("../lib/server");
+const {ANNUAL_PRICE_USD, env, send, readBody, safeEqual, db, extendAccess, handlerError} = require("../lib/server");
 
 const USER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -11,7 +11,7 @@ function orderUserId(orderId) {
 function isExpectedPayment(payload) {
   return payload?.payment_status === "finished" &&
     String(payload?.price_currency || "").toLowerCase() === "usd" &&
-    Number(payload?.price_amount) >= 20;
+    Number(payload?.price_amount) >= ANNUAL_PRICE_USD;
 }
 
 function sortObject(value) {
