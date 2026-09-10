@@ -196,6 +196,12 @@ function closePlayer() {
   document.body.style.overflow = "";
 }
 
+window.addEventListener("sandboxed:playback-rejected", () => {
+  modal.hidden = true;
+  frame.src = "about:blank";
+  document.body.style.overflow = "";
+});
+
 function playbackPlatform() {
   const userAgent = navigator.userAgent || "";
   const iPadDesktopMode = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;

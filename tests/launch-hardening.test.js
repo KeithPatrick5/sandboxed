@@ -53,6 +53,15 @@ test("stream-limit errors use a dedicated message instead of the account screen"
   assert.match(membership, /openModal\("stream-limit"/);
 });
 
+test("a rejected heartbeat unloads the active player", () => {
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
+  assert.match(membership, /catch\(handleHeartbeatRejection\)/);
+  assert.match(membership, /sandboxed:playback-rejected/);
+  assert.match(app, /sandboxed:playback-rejected/);
+  assert.match(app, /frame\.src = "about:blank"/);
+});
+
 test("trial claims survive account deletion and remain cross-account", () => {
   const schema = fs.readFileSync(path.join(root, "supabase-setup.sql"), "utf8");
   const server = fs.readFileSync(path.join(root, "lib/server.js"), "utf8");

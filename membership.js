@@ -523,8 +523,22 @@
     if (!sessionId) return;
     playbackSessionId = sessionId;
     heartbeatTimer = setInterval(() => {
-      authorizedFetch("/api/heartbeat", {method:"POST", body:JSON.stringify({sessionId})}).catch(() => stopPlayback(false));
+      authorizedFetch("/api/heartbeat", {method:"POST", body:JSON.stringify({sessionId})}).catch(handleHeartbeatRejection);
     }, 45000);
+  }
+
+  function handleHeartbeatRejection(error) {
+    stopPlayback(false);
+    window.dispatchEvent(new CustomEvent("sandboxed:playback-rejected", {
+      detail:{code:error?.code || "HEARTBEAT_FAILED", message:error?.message || "Playback authorization could not be confirmed."}
+    }));
+    if (error?.status === 402 || error?.code === "PLAYBACK_ACCESS_ENDED") {
+      openModal("paywall", error.message);
+    } else if (error?.code === "DEVICE_REVOKED") {
+      openModal("device-limit", error.message);
+    } else {
+      openModal("account", error?.message || "Playback authorization could not be confirmed.");
+    }
   }
 
   function stopPlayback(notify = true) {

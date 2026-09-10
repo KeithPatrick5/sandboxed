@@ -10,6 +10,7 @@ const {
   accessState,
   activeStreamDeviceIds,
   hasAvailableStreamSlot,
+  validatePlaybackAuthorization,
   secureHash,
   safeEqual
 } = require("../lib/server");
@@ -40,6 +41,18 @@ test("access states distinguish eligible, trial, paid, and expired accounts", ()
   assert.equal(accessState({trial_started_at:new Date().toISOString(), trial_ends_at:new Date(Date.now() + 60000).toISOString()}).state, "trial");
   assert.equal(accessState({access_until:new Date(Date.now() + 60000).toISOString()}).state, "active");
   assert.equal(accessState({trial_started_at:new Date(Date.now() - 900000).toISOString(), trial_ends_at:new Date(Date.now() - 60000).toISOString()}).state, "expired");
+});
+
+test("playback heartbeats require current access and an authorized device", () => {
+  const device = {id:"device-1"};
+  const trial = {trial_started_at:new Date().toISOString(), trial_ends_at:new Date(Date.now() + 60000).toISOString()};
+  const paid = {access_until:new Date(Date.now() + 60000).toISOString()};
+  const expired = {trial_started_at:new Date(Date.now() - 120000).toISOString(), trial_ends_at:new Date(Date.now() - 60000).toISOString()};
+
+  assert.equal(validatePlaybackAuthorization(trial, device).state, "trial");
+  assert.equal(validatePlaybackAuthorization(paid, device).state, "active");
+  assert.throws(() => validatePlaybackAuthorization(expired, device), {code:"PLAYBACK_ACCESS_ENDED", status:402});
+  assert.throws(() => validatePlaybackAuthorization(paid, null), {code:"DEVICE_REVOKED", status:403});
 });
 
 test("device signals are hashed and compared without plain-text storage", () => {
