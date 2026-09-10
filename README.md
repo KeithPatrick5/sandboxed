@@ -34,7 +34,7 @@ Deploy the folder root to Vercel with no build command. Set `TMDB_READ_TOKEN` (r
 4. In Stripe, send the required events—including `charge.refunded`, `charge.dispute.created`, and `charge.dispute.closed`—to `https://sandboxed-tv.vercel.app/api/stripe-webhook` and store the signing secret as `STRIPE_WEBHOOK_SECRET`.
 5. In NOWPayments, store the API and IPN secrets in Vercel. The app supplies its callback URL when it creates an invoice.
 
-Required membership variables are `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `DEVICE_HASH_SECRET`. Stripe and NOWPayments activate independently when their respective variables are present.
+Required membership variables are `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `DEVICE_HASH_SECRET`. Stripe also requires `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the fixed annual `STRIPE_PRICE_ID`. Stripe and NOWPayments activate independently when their respective variables are present.
 
 ## Namecheap shared hosting
 

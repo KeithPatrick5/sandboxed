@@ -8,6 +8,7 @@ const nowPaymentsWebhook = require("../api/nowpayments-ipn");
 const {clientIp} = require("../lib/server");
 
 const root = path.join(__dirname, "..");
+process.env.STRIPE_PRICE_ID = "price_sandboxed_annual";
 
 test("the browser cannot fall back to an ungated player URL", () => {
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
@@ -106,12 +107,16 @@ test("client IP uses the proxy-appended address instead of a spoofed first value
 });
 
 test("Stripe access requires the expected paid USD amount", () => {
-  assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"paid", currency:"usd", amount_total:3000}), true);
-  assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"no_payment_required", currency:"usd", amount_total:0}), false);
-  assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"paid", currency:"usd", amount_total:100}), false);
-  assert.equal(stripeWebhook.isExpectedCheckoutPayment({payment_status:"paid", currency:"eur", amount_total:3000}), false);
-  assert.equal(stripeWebhook.isExpectedInvoicePayment({currency:"usd", amount_paid:3000}), true);
-  assert.equal(stripeWebhook.isExpectedInvoicePayment({currency:"usd", amount_paid:2999}), false);
+  const checkout = {payment_status:"paid", currency:"usd", amount_total:3000, subscription:"sub_expected", metadata:{price_id:"price_sandboxed_annual"}};
+  const invoice = {currency:"usd", amount_paid:3000, parent:{subscription_details:{subscription:"sub_expected"}}, lines:{data:[{pricing:{price_details:{price:"price_sandboxed_annual"}}}]}};
+  assert.equal(stripeWebhook.isExpectedCheckoutPayment(checkout), true);
+  assert.equal(stripeWebhook.isExpectedCheckoutPayment({...checkout, metadata:{price_id:"price_wrong"}}), false);
+  assert.equal(stripeWebhook.isExpectedCheckoutPayment({...checkout, amount_total:100}), false);
+  assert.equal(stripeWebhook.isExpectedCheckoutPayment({...checkout, currency:"eur"}), false);
+  assert.equal(stripeWebhook.isExpectedInvoicePayment(invoice, "sub_expected"), true);
+  assert.equal(stripeWebhook.isExpectedInvoicePayment({...invoice, amount_paid:2999}, "sub_expected"), false);
+  assert.equal(stripeWebhook.isExpectedInvoicePayment(invoice, "sub_other"), false);
+  assert.equal(stripeWebhook.isExpectedInvoicePayment({...invoice, lines:{data:[]}}, "sub_expected"), false);
 });
 
 test("Stripe refunds and disputes suspend access while won disputes restore it", () => {
@@ -128,9 +133,13 @@ test("Stripe refunds and disputes suspend access while won disputes restore it",
 test("checkout prices are generated from the same server-side $30 policy", () => {
   const stripeCheckout = fs.readFileSync(path.join(root, "api/stripe-checkout.js"), "utf8");
   const nowPaymentsInvoice = fs.readFileSync(path.join(root, "api/nowpayments-invoice.js"), "utf8");
-  assert.match(stripeCheckout, /ANNUAL_PRICE_CENTS/);
-  assert.doesNotMatch(stripeCheckout, /STRIPE_PRICE_ID/);
+  assert.match(stripeCheckout, /line_items\[0\]\[price\]/);
+  assert.match(stripeCheckout, /STRIPE_PRICE_ID/);
+  assert.match(stripeCheckout, /Idempotency-Key/);
+  assert.match(stripeCheckout, /stripe-checkout:/);
   assert.match(nowPaymentsInvoice, /price_amount:ANNUAL_PRICE_USD/);
+  assert.match(nowPaymentsInvoice, /invoice_created/);
+  assert.match(nowPaymentsInvoice, /reused:true/);
 });
 
 test("NOWPayments access requires a finished $30 USD order for a valid user", () => {

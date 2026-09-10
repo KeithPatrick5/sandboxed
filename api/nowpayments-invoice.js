@@ -1,4 +1,4 @@
-const {ANNUAL_PRICE_USD, env, baseUrl, send, requireUser, ensureProfile, db, handlerError} = require("../lib/server");
+const {ANNUAL_PRICE_USD, env, baseUrl, send, requireUser, ensureProfile, rateLimit, db, handlerError} = require("../lib/server");
 
 module.exports = async function handler(request, response) {
   if (request.method !== "POST") return send(response, 405, {error:"Method not allowed"});
@@ -7,7 +7,12 @@ module.exports = async function handler(request, response) {
       throw Object.assign(new Error("Crypto payments are not configured yet"), {status:503, code:"NOWPAYMENTS_NOT_CONFIGURED"});
     }
     const {user} = await requireUser(request);
+    rateLimit(request, `nowpayments-invoice:${user.id}`, 5, 3600);
     await ensureProfile(user);
+    const recentCutoff = new Date(Date.now() - 30 * 60000).toISOString();
+    const pending = await db(`payment_events?provider=eq.nowpayments_invoice&user_id=eq.${encodeURIComponent(user.id)}&status=eq.invoice_created&created_at=gt.${encodeURIComponent(recentCutoff)}&select=payload&order=created_at.desc&limit=1`, {prefer:""});
+    const existingUrl = String(pending?.[0]?.payload?.invoice_url || "");
+    if (existingUrl.startsWith("https://")) return send(response, 200, {url:existingUrl, reused:true});
     const orderId = `sandboxed:${user.id}:${Date.now()}`;
     const now = await fetch("https://api.nowpayments.io/v1/invoice", {
       method:"POST",
@@ -36,7 +41,7 @@ module.exports = async function handler(request, response) {
         status:"invoice_created",
         amount:ANNUAL_PRICE_USD,
         currency:"usd",
-        payload:{invoice_id:invoiceId, order_id:orderId}
+        payload:{invoice_id:invoiceId, order_id:orderId, invoice_url:url}
       },
       prefer:"return=minimal"
     });

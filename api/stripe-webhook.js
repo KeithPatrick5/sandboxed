@@ -4,12 +4,30 @@ const {ANNUAL_PRICE_CENTS, env, send, readRawBody, safeEqual, db, updateProfile,
 function isExpectedCheckoutPayment(object) {
   return object?.payment_status === "paid" &&
     String(object?.currency || "").toLowerCase() === "usd" &&
-    Number(object?.amount_total) === ANNUAL_PRICE_CENTS;
+    Number(object?.amount_total) === ANNUAL_PRICE_CENTS &&
+    String(object?.metadata?.price_id || "") === env("STRIPE_PRICE_ID") &&
+    String(object?.subscription || "").startsWith("sub_");
 }
 
-function isExpectedInvoicePayment(object) {
+function invoiceSubscriptionId(object) {
+  const subscription = object?.parent?.subscription_details?.subscription ?? object?.subscription;
+  return typeof subscription === "string" ? subscription : String(subscription?.id || "");
+}
+
+function invoicePriceIds(object) {
+  return (object?.lines?.data || []).map((line) => {
+    const price = line?.pricing?.price_details?.price ?? line?.price;
+    return typeof price === "string" ? price : String(price?.id || "");
+  }).filter(Boolean);
+}
+
+function isExpectedInvoicePayment(object, expectedSubscriptionId = "") {
+  const subscriptionId = invoiceSubscriptionId(object);
   return String(object?.currency || "").toLowerCase() === "usd" &&
-    Number(object?.amount_paid) >= ANNUAL_PRICE_CENTS;
+    Number(object?.amount_paid) === ANNUAL_PRICE_CENTS &&
+    subscriptionId.startsWith("sub_") &&
+    (!expectedSubscriptionId || subscriptionId === expectedSubscriptionId) &&
+    invoicePriceIds(object).includes(env("STRIPE_PRICE_ID"));
 }
 
 function verifySignature(raw, header) {
@@ -26,9 +44,13 @@ async function eventSeen(id) {
   return Boolean(rows?.length);
 }
 
+async function profileByCustomer(customerId) {
+  const rows = await db(`profiles?stripe_customer_id=eq.${encodeURIComponent(customerId)}&select=id,stripe_subscription_id`, {prefer:""});
+  return rows?.[0] || null;
+}
+
 async function userByCustomer(customerId) {
-  const rows = await db(`profiles?stripe_customer_id=eq.${encodeURIComponent(customerId)}&select=id`, {prefer:""});
-  return rows?.[0]?.id || "";
+  return (await profileByCustomer(customerId))?.id || "";
 }
 
 async function stripeObject(path) {
@@ -78,10 +100,12 @@ module.exports = async function handler(request, response) {
     }
 
     if (event.type === "invoice.paid") {
-      if (!userId && object.customer) userId = await userByCustomer(String(object.customer));
+      const customerProfile = object.customer ? await profileByCustomer(String(object.customer)) : null;
+      if (!userId) userId = object?.parent?.subscription_details?.metadata?.user_id || customerProfile?.id || "";
       const periodEnd = object.lines?.data?.reduce((latest, line) => Math.max(latest, Number(line.period?.end) || 0), 0) || 0;
-      if (userId && periodEnd && isExpectedInvoicePayment(object)) {
-        await extendAccess(userId, new Date(periodEnd * 1000), {subscription_status:"active"});
+      const subscriptionId = invoiceSubscriptionId(object);
+      if (userId && periodEnd && isExpectedInvoicePayment(object, customerProfile?.stripe_subscription_id || "")) {
+        await extendAccess(userId, new Date(periodEnd * 1000), {subscription_status:"active", stripe_subscription_id:subscriptionId});
       }
     }
 
@@ -139,3 +163,5 @@ module.exports.config = {api:{bodyParser:false}};
 module.exports.isExpectedCheckoutPayment = isExpectedCheckoutPayment;
 module.exports.isExpectedInvoicePayment = isExpectedInvoicePayment;
 module.exports.stripeAccessAction = stripeAccessAction;
+module.exports.invoiceSubscriptionId = invoiceSubscriptionId;
+module.exports.invoicePriceIds = invoicePriceIds;

@@ -20,7 +20,7 @@ module.exports = async function handler(request, response) {
     maxStreams:MAX_STREAMS,
     maxReplacementsPer30Days:MAX_REPLACEMENTS_30_DAYS,
     supportEmail:env("SUPPORT_EMAIL"),
-    stripeEnabled:Boolean(env("STRIPE_SECRET_KEY")),
+    stripeEnabled:Boolean(env("STRIPE_SECRET_KEY") && env("STRIPE_PRICE_ID")),
     nowPaymentsEnabled:Boolean(env("NOWPAYMENTS_API_KEY") && env("NOWPAYMENTS_IPN_SECRET"))
   });
 };
