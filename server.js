@@ -10,6 +10,7 @@ const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
 const MAX_CONTENT_LENGTH = 1024 * 1024;
 
 const API_ROUTES = new Map([
+  ["/api/analytics", require("./api/analytics")],
   ["/api/auth", require("./api/auth")],
   ["/api/catalog", require("./api/catalog")],
   ["/api/config", require("./api/config")],

@@ -17,6 +17,7 @@ Sandboxed is an isolated movie and series interface with device-specific playbac
 - My List storage is isolated by signed-in account on shared browsers
 - Completed playback sessions, revoked devices, and payment events have bounded retention periods; trial-abuse claims are preserved
 - Unexpected server failures return generic public messages and can be reported to Sentry through an optional DSN with sensitive values redacted
+- Privacy-preserving first/last-touch campaign analytics through a same-origin endpoint; financial conversions are emitted only after server-verified payment events
 
 Playback fails closed until all required Supabase variables and `DEVICE_HASH_SECRET` are present. If membership configuration or its client script is unavailable, the player remains locked instead of falling back to a direct third-party URL.
 
@@ -41,6 +42,8 @@ Deploy the folder root to Vercel with no build command. Set `TMDB_READ_TOKEN` (r
 Required membership variables are `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `DEVICE_HASH_SECRET`. Stripe also requires `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, the annual recurring `STRIPE_PRICE_ID`, and the monthly recurring `STRIPE_MONTHLY_PRICE_ID`. Stripe and NOWPayments activate independently when their respective variables are present.
 
 Optional server error monitoring uses `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, and `SENTRY_RELEASE`. The DSN is an ingestion credential, not a Sentry account API token. Do not put `SENTRY_AUTH_TOKEN` in the website environment.
+
+Optional product analytics uses `POSTHOG_PROJECT_TOKEN` and `POSTHOG_HOST`. Run `supabase-analytics.sql` before enabling it. Only the PostHog US and EU ingest hosts are accepted. Sandboxed does not load PostHog JavaScript in the browser: the first-party `/api/analytics` endpoint accepts only landing and authentication-start events, hashes its random visitor identifier, and forwards a strict property allowlist. Signup, login, trial, checkout, payment, renewal, failure, cancellation, and reversal events are emitted by their corresponding server-side workflows. Supabase remains the payment and access source of truth.
 
 ## Namecheap shared hosting
 

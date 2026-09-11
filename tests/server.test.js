@@ -102,10 +102,12 @@ test("retention cleanup sends only bounded service-role deletes", async () => {
     assert.equal(result.watchCutoff, "2026-08-11T00:00:00.000Z");
     assert.equal(result.deviceCutoff, "2026-06-12T00:00:00.000Z");
     assert.equal(result.paymentCutoff, "2025-08-06T00:00:00.000Z");
-    assert.deepEqual(calls.map((call) => call.method), ["DELETE", "DELETE", "DELETE"]);
+    assert.deepEqual(calls.map((call) => call.method), ["DELETE", "DELETE", "DELETE", "DELETE", "DELETE"]);
     assert.match(calls[0].url, /watch_sessions\?ended_at=not\.is\.null/);
     assert.match(calls[1].url, /devices\?revoked_at=not\.is\.null/);
     assert.match(calls[2].url, /payment_events\?created_at=lt/);
+    assert.match(calls[3].url, /marketing_events\?created_at=lt/);
+    assert.match(calls[4].url, /marketing_attribution\?user_id=is.null/);
     assert.doesNotMatch(calls.map((call) => call.url).join("\n"), /trial_claims|profiles/);
   } finally {
     global.fetch = previousFetch;

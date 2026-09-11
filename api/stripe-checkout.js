@@ -12,6 +12,7 @@ const {
   stripePriceIdForPlan,
   handlerError
 } = require("../lib/server");
+const {recordAnalyticsEventSafe} = require("../lib/analytics");
 
 module.exports = async function handler(request, response) {
   if (request.method !== "POST") return send(response, 405, {error:"Method not allowed"});
@@ -55,6 +56,14 @@ module.exports = async function handler(request, response) {
     });
     const payload = await stripe.json();
     if (!stripe.ok || !payload.url) throw Object.assign(new Error(payload?.error?.message || "Stripe checkout could not be created"), {status:502, code:"STRIPE_ERROR"});
+    await recordAnalyticsEventSafe({
+      event:"checkout_started",
+      visitorId:body.visitorId,
+      userId:user.id,
+      attribution:body.attribution,
+      properties:{plan:plan.code, provider:"stripe", amount:plan.priceUsd, currency:"usd"},
+      eventKey:`stripe-checkout:${payload.id || secureHash(payload.url)}`
+    });
     return send(response, 200, {url:payload.url});
   } catch (error) {
     return handlerError(response, error);

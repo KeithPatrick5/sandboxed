@@ -1,0 +1,18 @@
+SANDBOXED PRIVACY-PRESERVING ANALYTICS UPDATE
+
+Prerequisites already completed:
+- supabase-analytics.sql ran successfully
+- POSTHOG_PROJECT_TOKEN is saved in cPanel
+- POSTHOG_HOST is set to https://us.i.posthog.com
+
+Install:
+1. In cPanel File Manager, open /home/dropdebs/sandboxed.
+2. Upload Sandboxed-analytics-ready.zip into that folder.
+3. Extract it into exactly /home/dropdebs/sandboxed and allow overwrites.
+4. Confirm the startup file is still cpanel.js.
+5. Restart the Sandboxed Node.js application once.
+6. Open https://sandboxed.lol/healthz and confirm {"ok":true}.
+
+Do not extract into /home/dropdebs or public_html.
+Do not delete or replace any existing environment variables.
+Do not install a PostHog browser script or SDK.

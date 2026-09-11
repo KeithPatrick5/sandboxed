@@ -1,4 +1,5 @@
 const {ANNUAL_PRICE_USD, env, baseUrl, send, readBody, requireUser, ensureProfile, rateLimit, db, handlerError} = require("../lib/server");
+const {recordAnalyticsEventSafe} = require("../lib/analytics");
 
 module.exports = async function handler(request, response) {
   if (request.method !== "POST") return send(response, 405, {error:"Method not allowed"});
@@ -16,7 +17,16 @@ module.exports = async function handler(request, response) {
     const recentCutoff = new Date(Date.now() - 30 * 60000).toISOString();
     const pending = await db(`payment_events?provider=eq.nowpayments_invoice&user_id=eq.${encodeURIComponent(user.id)}&status=eq.invoice_created&created_at=gt.${encodeURIComponent(recentCutoff)}&select=payload&order=created_at.desc&limit=1`, {prefer:""});
     const existingUrl = String(pending?.[0]?.payload?.invoice_url || "");
-    if (existingUrl.startsWith("https://")) return send(response, 200, {url:existingUrl, reused:true});
+    if (existingUrl.startsWith("https://")) {
+      await recordAnalyticsEventSafe({
+        event:"checkout_started",
+        visitorId:body.visitorId,
+        userId:user.id,
+        attribution:body.attribution,
+        properties:{plan:"annual", provider:"nowpayments", amount:ANNUAL_PRICE_USD, currency:"usd"}
+      });
+      return send(response, 200, {url:existingUrl, reused:true});
+    }
     const orderId = `sandboxed:${user.id}:${Date.now()}`;
     const now = await fetch("https://api.nowpayments.io/v1/invoice", {
       method:"POST",
@@ -48,6 +58,14 @@ module.exports = async function handler(request, response) {
         payload:{invoice_id:invoiceId, order_id:orderId, invoice_url:url}
       },
       prefer:"return=minimal"
+    });
+    await recordAnalyticsEventSafe({
+      event:"checkout_started",
+      visitorId:body.visitorId,
+      userId:user.id,
+      attribution:body.attribution,
+      properties:{plan:"annual", provider:"nowpayments", amount:ANNUAL_PRICE_USD, currency:"usd"},
+      eventKey:`nowpayments-invoice:${invoiceId}`
     });
     return send(response, 200, {url});
   } catch (error) {

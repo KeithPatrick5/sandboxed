@@ -1,6 +1,10 @@
 (() => {
   const SESSION_KEY = "sandboxed-auth-session";
   const LEGACY_DEVICE_KEY = "sandboxed-device-id";
+  const ANALYTICS_VISITOR_KEY = "sandboxed-analytics-visitor";
+  const FIRST_TOUCH_KEY = "sandboxed-first-touch";
+  const LAST_TOUCH_KEY = "sandboxed-last-touch";
+  const LANDING_SESSION_KEY = "sandboxed-landing-recorded";
   const modal = document.querySelector("#membership-modal");
   const content = document.querySelector("#membership-content");
   const accountButton = document.querySelector("#account-button");
@@ -55,11 +59,91 @@
     };
   }
 
+  function randomId() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+  }
+
+  function analyticsVisitorId() {
+    try {
+      const existing = localStorage.getItem(ANALYTICS_VISITOR_KEY);
+      if (/^[0-9a-f-]{36}$/i.test(existing || "")) return existing;
+      const created = randomId();
+      localStorage.setItem(ANALYTICS_VISITOR_KEY, created);
+      return created;
+    } catch {
+      return randomId();
+    }
+  }
+
+  function readStoredTouch(key) {
+    try { return JSON.parse(localStorage.getItem(key) || "null"); } catch { return null; }
+  }
+
+  function writeStoredTouch(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  }
+
+  function currentTouch() {
+    const params = new URLSearchParams(location.search);
+    let referrer = "";
+    try {
+      const host = document.referrer ? new URL(document.referrer).hostname.toLowerCase() : "";
+      if (host && host !== location.hostname.toLowerCase() && !host.endsWith(".sandboxed.lol")) referrer = host;
+    } catch {}
+    const campaignPresent = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"].some((key) => params.has(key));
+    return {
+      source:String(params.get("utm_source") || referrer || "direct").slice(0,80),
+      medium:String(params.get("utm_medium") || (referrer ? "referral" : "")).slice(0,80),
+      campaign:String(params.get("utm_campaign") || "").slice(0,120),
+      content:String(params.get("utm_content") || "").slice(0,120),
+      term:String(params.get("utm_term") || "").slice(0,120),
+      referrer,
+      landingPath:location.pathname.slice(0,300),
+      attributable:Boolean(campaignPresent || referrer)
+    };
+  }
+
+  function analyticsAttribution() {
+    const touch = currentTouch();
+    let first = readStoredTouch(FIRST_TOUCH_KEY);
+    let last = readStoredTouch(LAST_TOUCH_KEY);
+    if (!first) {
+      first = touch;
+      writeStoredTouch(FIRST_TOUCH_KEY, first);
+    }
+    if (!last || touch.attributable) {
+      last = touch;
+      writeStoredTouch(LAST_TOUCH_KEY, last);
+    }
+    return {firstTouch:first, lastTouch:last};
+  }
+
+  function analyticsContext() {
+    return {visitorId:analyticsVisitorId(), attribution:analyticsAttribution()};
+  }
+
+  function trackAnalytics(event, properties = {}) {
+    const headers = {"Content-Type":"application/json"};
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+    return fetch("/api/analytics", {
+      method:"POST",
+      headers,
+      body:JSON.stringify({event, eventId:randomId(), ...analyticsContext(), properties}),
+      keepalive:true
+    }).catch(() => null);
+  }
+
   async function authRequest(body) {
+    const requestBody = ["signup", "login"].includes(body?.action) ? {...body, ...analyticsContext()} : body;
     const response = await fetch("/api/auth", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(body)
+      body:JSON.stringify(requestBody)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw Object.assign(new Error(payload.error || "Authentication failed"), {code:payload.code, status:response.status});
@@ -297,6 +381,7 @@
       }
       submit.disabled = true;
       setMessage(signup ? "Creating your account…" : "Signing in…");
+      trackAnalytics("auth_started", {auth_method:"password", intent:signup ? "signup" : "login"});
       try {
         const payload = await authRequest({action:signup ? "signup" : "login", email:form.get("email"), password});
         if (payload.confirmationRequired) return renderVerify("Check your email and tap the verification link, then return here to sign in.");
@@ -439,7 +524,7 @@
         const endpoint = button.dataset.checkout === "stripe" ? "/api/stripe-checkout" : "/api/nowpayments-invoice";
         // Namecheap/LiteSpeed rejects bodyless POST requests before they reach
         // the Node app. A small JSON plan body keeps checkout requests routable.
-        const payload = await authorizedFetch(endpoint, {method:"POST", body:JSON.stringify({plan:button.dataset.plan || "annual"})});
+        const payload = await authorizedFetch(endpoint, {method:"POST", body:JSON.stringify({plan:button.dataset.plan || "annual", ...analyticsContext()})});
         location.href = payload.url;
       } catch (error) {
         setMessage(error.message, true);
@@ -567,7 +652,7 @@
     try {
       const payload = await authorizedFetch("/api/play", {
         method:"POST",
-        body:JSON.stringify({...await devicePayload(), item:{id:item.id, type:item.type}})
+        body:JSON.stringify({...await devicePayload(), ...analyticsContext(), item:{id:item.id, type:item.type}})
       });
       if (account) account.profile = payload.access;
       updateHeader();
@@ -657,6 +742,12 @@
 
   async function init() {
     parseAuthRedirect();
+    let landingRecorded = false;
+    try {
+      landingRecorded = sessionStorage.getItem(LANDING_SESSION_KEY) === "1";
+      if (!landingRecorded) sessionStorage.setItem(LANDING_SESSION_KEY, "1");
+    } catch {}
+    if (!landingRecorded) trackAnalytics("landing_view");
     try {
       const response = await fetch("/api/config", {headers:{accept:"application/json"}});
       if (!response.ok) throw new Error(`Configuration request failed (${response.status})`);

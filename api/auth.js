@@ -1,4 +1,5 @@
 const {baseUrl, send, readBody, rateLimit, supabaseAuth, handlerError} = require("../lib/server");
+const {recordAnalyticsEventSafe} = require("../lib/analytics");
 
 function validEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
@@ -25,6 +26,17 @@ module.exports = async function handler(request, response) {
         method:"POST",
         body:{email, password}
       });
+      const createdAt = Date.parse(payload?.user?.created_at || "");
+      if (payload?.user?.id && Number.isFinite(createdAt) && Math.abs(Date.now() - createdAt) < 120000) {
+        await recordAnalyticsEventSafe({
+          event:"account_created",
+          visitorId:body.visitorId,
+          userId:payload.user.id,
+          attribution:body.attribution,
+          properties:{auth_method:"password"},
+          eventKey:`account:${payload.user.id}`
+        });
+      }
       return send(response, 200, {
         user:payload.user || null,
         session:payload.session || (payload.access_token ? payload : null),
@@ -36,6 +48,15 @@ module.exports = async function handler(request, response) {
       rateLimit(request, "auth-login", 20, 600);
       if (!validEmail(email) || !password) return send(response, 400, {error:"Enter your email and password", code:"MISSING_LOGIN"});
       payload = await supabaseAuth("/token?grant_type=password", {method:"POST", body:{email, password}});
+      if (payload?.user?.id) {
+        await recordAnalyticsEventSafe({
+          event:"login_completed",
+          visitorId:body.visitorId,
+          userId:payload.user.id,
+          attribution:body.attribution,
+          properties:{auth_method:"password"}
+        });
+      }
       return send(response, 200, {session:payload});
     }
 

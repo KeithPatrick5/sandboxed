@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const {ANNUAL_PRICE_USD, env, send, readBody, safeEqual, db, extendAccess, handlerError} = require("../lib/server");
+const {recordAnalyticsEventSafe} = require("../lib/analytics");
 
 const USER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -23,7 +24,7 @@ function sortObject(value) {
   }, {});
 }
 
-function paymentEventFields(externalId, userId, payload, status, accessUntil = null) {
+function paymentEventFields(externalId, userId, payload, status, accessUntil = null, renewing = false) {
   return {
     provider:"nowpayments",
     external_id:externalId,
@@ -38,7 +39,7 @@ function paymentEventFields(externalId, userId, payload, status, accessUntil = n
       payment_status:payload.payment_status || null,
       price_amount:Number(payload.price_amount || 0) || null,
       price_currency:payload.price_currency || null,
-      ...(accessUntil ? {access_until:accessUntil} : {})
+      ...(accessUntil ? {access_until:accessUntil, renewing:Boolean(renewing)} : {})
     }
   };
 }
@@ -68,11 +69,13 @@ async function processPayment(payload) {
 
   if (isExpectedPayment(payload) && userId) {
     let accessUntil = event?.payload?.access_until || "";
+    let renewing = Boolean(event?.payload?.renewing);
     if (!accessUntil) {
       const profiles = await db(`profiles?id=eq.${encodeURIComponent(userId)}&select=access_until`, {prefer:""});
+      renewing = Date.parse(profiles?.[0]?.access_until || "") > Date.now();
       accessUntil = nextCryptoAccessUntil(profiles?.[0]?.access_until);
     }
-    const activating = paymentEventFields(externalId, userId, payload, "activating", accessUntil);
+    const activating = paymentEventFields(externalId, userId, payload, "activating", accessUntil, renewing);
     if (event) {
       const rows = await db(`payment_events?id=eq.${encodeURIComponent(event.id)}`, {
         method:"PATCH", body:activating, prefer:"return=representation"
@@ -89,10 +92,16 @@ async function processPayment(payload) {
     });
     await db(`payment_events?id=eq.${encodeURIComponent(event.id)}`, {
       method:"PATCH",
-      body:paymentEventFields(externalId, userId, payload, "finished", accessUntil),
+      body:paymentEventFields(externalId, userId, payload, "finished", accessUntil, renewing),
       prefer:"return=minimal"
     });
     await closeInvoiceEvent(userId, payload, "finished");
+    await recordAnalyticsEventSafe({
+      event:renewing ? "renewal_paid" : "membership_activated",
+      userId,
+      properties:{plan:"annual", provider:"nowpayments", amount:Number(payload.price_amount), currency:"usd"},
+      eventKey:`nowpayments-payment:${externalId}`
+    });
     return {received:true, activated:true, userId};
   }
 

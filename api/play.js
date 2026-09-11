@@ -9,6 +9,7 @@ const {
   beginWatchSession,
   handlerError
 } = require("../lib/server");
+const {recordAnalyticsEventSafe} = require("../lib/analytics");
 
 function playerUrl(item) {
   const id = Number(item?.id);
@@ -28,9 +29,17 @@ async function handler(request, response) {
     let profile = await ensureProfile(user);
     const device = await registerDevice(user.id, body, request, response);
     let access = accessState(profile);
+    const startingTrial = access.state === "eligible";
     if (access.state === "eligible") {
       profile = await startTrial(profile, device);
       access = accessState(profile);
+      await recordAnalyticsEventSafe({
+        event:"trial_started",
+        visitorId:body.visitorId,
+        userId:user.id,
+        attribution:body.attribution,
+        eventKey:`trial:${user.id}`
+      });
     }
     if (access.state !== "trial" && access.state !== "active") {
       throw Object.assign(new Error("Your free trial has ended. Choose a payment method to continue."), {status:402, code:"PAYMENT_REQUIRED"});
@@ -38,7 +47,7 @@ async function handler(request, response) {
     const url = playerUrl(body.item);
     const contentKey = `${body.item?.type === "tv" ? "tv" : "movie"}:${Number(body.item?.id)}`;
     const watch = await beginWatchSession(user.id, device.id, contentKey);
-    return send(response, 200, {url, sessionId:watch.id, access});
+    return send(response, 200, {url, sessionId:watch.id, access, trialStarted:startingTrial});
   } catch (error) {
     return handlerError(response, error);
   }

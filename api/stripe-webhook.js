@@ -12,6 +12,7 @@ const {
   planForStripePriceId,
   handlerError
 } = require("../lib/server");
+const {recordAnalyticsEventSafe} = require("../lib/analytics");
 
 function checkoutPaymentPlan(object) {
   const plan = planForStripePriceId(object?.metadata?.price_id);
@@ -137,6 +138,12 @@ module.exports = async function handler(request, response) {
             membership_plan:plan.code,
             membership_provider:"stripe"
           });
+          await recordAnalyticsEventSafe({
+            event:"membership_activated",
+            userId,
+            properties:{plan:plan.code, provider:"stripe", amount:plan.priceUsd, currency:"usd"},
+            eventKey:`stripe-invoice:${invoiceId}`
+          });
         }
       }
     }
@@ -155,17 +162,39 @@ module.exports = async function handler(request, response) {
           membership_plan:plan.code,
           membership_provider:"stripe"
         });
+        await recordAnalyticsEventSafe({
+          event:object.billing_reason === "subscription_cycle" ? "renewal_paid" : "membership_activated",
+          userId,
+          properties:{plan:plan.code, provider:"stripe", amount:plan.priceUsd, currency:"usd"},
+          eventKey:`stripe-invoice:${object.id}`
+        });
       }
     }
 
     if (event.type === "invoice.payment_failed") {
       if (!userId && object.customer) userId = await userByCustomer(String(object.customer));
-      if (userId) await updateProfile(userId, {subscription_status:"past_due"});
+      if (userId) {
+        await updateProfile(userId, {subscription_status:"past_due"});
+        await recordAnalyticsEventSafe({
+          event:"payment_failed",
+          userId,
+          properties:{provider:"stripe", amount:Number(object.amount_due || 0) / 100, currency:object.currency || "usd"},
+          eventKey:`stripe-event:${event.id}`
+        });
+      }
     }
 
     if (event.type === "customer.subscription.deleted") {
       if (!userId && object.customer) userId = await userByCustomer(String(object.customer));
-      if (userId) await updateProfile(userId, {subscription_status:"cancelled"});
+      if (userId) {
+        await updateProfile(userId, {subscription_status:"cancelled"});
+        await recordAnalyticsEventSafe({
+          event:"membership_cancelled",
+          userId,
+          properties:{provider:"stripe"},
+          eventKey:`stripe-event:${event.id}`
+        });
+      }
     }
 
     const accessAction = stripeAccessAction(event.type, object);
@@ -175,8 +204,23 @@ module.exports = async function handler(request, response) {
         if (customerId) userId = await userByCustomer(customerId);
       }
       if (userId) {
-        if (accessAction === "active") await updateProfile(userId, {subscription_status:"active"});
-        else await suspendMembershipAccess(userId, accessAction);
+        if (accessAction === "active") {
+          await updateProfile(userId, {subscription_status:"active"});
+          await recordAnalyticsEventSafe({
+            event:"membership_activated",
+            userId,
+            properties:{provider:"stripe", reason:"dispute_won"},
+            eventKey:`stripe-event:${event.id}`
+          });
+        } else {
+          await suspendMembershipAccess(userId, accessAction);
+          await recordAnalyticsEventSafe({
+            event:"membership_reversed",
+            userId,
+            properties:{provider:"stripe", reason:accessAction},
+            eventKey:`stripe-event:${event.id}`
+          });
+        }
       }
     }
 
