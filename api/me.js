@@ -26,7 +26,12 @@ module.exports = async function handler(request, response) {
       user:{id:user.id, email:user.email},
       profile:profileState,
       trialEligibility:eligibility,
-      billing:{hasStripeCustomer:Boolean(profile.stripe_customer_id), status:profile.subscription_status},
+      billing:{
+        hasStripeCustomer:Boolean(profile.stripe_customer_id),
+        status:profile.subscription_status,
+        plan:profile.membership_plan || (profile.access_until ? "annual" : null),
+        provider:profile.membership_provider || (profile.stripe_customer_id ? "stripe" : profile.access_until ? "nowpayments" : null)
+      },
       deviceId:device.id,
       devices
     });

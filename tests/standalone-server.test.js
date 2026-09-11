@@ -38,7 +38,11 @@ test("standalone server adapts query strings and Vercel response helpers", async
   await withServer(async (origin) => {
     const config = await fetch(`${origin}/api/config`);
     assert.equal(config.status, 200);
-    assert.equal(typeof (await config.json()).membershipEnabled, "boolean");
+    const configPayload = await config.json();
+    assert.equal(typeof configPayload.membershipEnabled, "boolean");
+    assert.equal(configPayload.plans.monthly.price, 6.99);
+    assert.equal(configPayload.plans.monthly.cryptoEnabled, false);
+    assert.equal(configPayload.plans.annual.price, 30);
 
     const shortSearch = await fetch(`${origin}/api/catalog?mode=search&q=x`);
     assert.equal(shortSearch.status, 400);

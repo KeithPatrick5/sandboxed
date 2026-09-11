@@ -1,4 +1,4 @@
-const {ANNUAL_PRICE_USD, env, baseUrl, send, requireUser, ensureProfile, rateLimit, db, handlerError} = require("../lib/server");
+const {ANNUAL_PRICE_USD, env, baseUrl, send, readBody, requireUser, ensureProfile, rateLimit, db, handlerError} = require("../lib/server");
 
 module.exports = async function handler(request, response) {
   if (request.method !== "POST") return send(response, 405, {error:"Method not allowed"});
@@ -7,6 +7,10 @@ module.exports = async function handler(request, response) {
       throw Object.assign(new Error("Crypto payments are not configured yet"), {status:503, code:"NOWPAYMENTS_NOT_CONFIGURED"});
     }
     const {user} = await requireUser(request);
+    const body = await readBody(request);
+    if (body.plan && body.plan !== "annual") {
+      throw Object.assign(new Error("Crypto payments are available for the annual plan only"), {status:400, code:"CRYPTO_ANNUAL_ONLY"});
+    }
     rateLimit(request, `nowpayments-invoice:${user.id}`, 5, 3600);
     await ensureProfile(user);
     const recentCutoff = new Date(Date.now() - 30 * 60000).toISOString();

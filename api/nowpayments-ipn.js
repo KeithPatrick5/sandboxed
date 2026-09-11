@@ -82,7 +82,11 @@ async function processPayment(payload) {
       const rows = await db("payment_events", {method:"POST", body:activating, prefer:"return=representation"});
       event = rows?.[0];
     }
-    await extendAccess(userId, accessUntil, {subscription_status:"active"});
+    await extendAccess(userId, accessUntil, {
+      subscription_status:"active",
+      membership_plan:"annual",
+      membership_provider:"nowpayments"
+    });
     await db(`payment_events?id=eq.${encodeURIComponent(event.id)}`, {
       method:"PATCH",
       body:paymentEventFields(externalId, userId, payload, "finished", accessUntil),

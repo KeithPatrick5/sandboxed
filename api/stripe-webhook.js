@@ -1,12 +1,32 @@
 const crypto = require("crypto");
-const {ANNUAL_PRICE_CENTS, env, send, readRawBody, safeEqual, db, updateProfile, extendAccess, suspendMembershipAccess, handlerError} = require("../lib/server");
+const {
+  env,
+  send,
+  readRawBody,
+  safeEqual,
+  db,
+  updateProfile,
+  extendAccess,
+  suspendMembershipAccess,
+  membershipPlan,
+  planForStripePriceId,
+  handlerError
+} = require("../lib/server");
 
-function isExpectedCheckoutPayment(object) {
+function checkoutPaymentPlan(object) {
+  const plan = planForStripePriceId(object?.metadata?.price_id);
+  const claimedPlan = object?.metadata?.plan ? membershipPlan(object.metadata.plan) : plan;
   return object?.payment_status === "paid" &&
     String(object?.currency || "").toLowerCase() === "usd" &&
-    Number(object?.amount_total) === ANNUAL_PRICE_CENTS &&
-    String(object?.metadata?.price_id || "") === env("STRIPE_PRICE_ID") &&
-    String(object?.subscription || "").startsWith("sub_");
+    plan && claimedPlan?.code === plan.code &&
+    Number(object?.amount_total) === plan.priceCents &&
+    String(object?.subscription || "").startsWith("sub_")
+    ? plan
+    : null;
+}
+
+function isExpectedCheckoutPayment(object) {
+  return Boolean(checkoutPaymentPlan(object));
 }
 
 function invoiceSubscriptionId(object) {
@@ -21,13 +41,25 @@ function invoicePriceIds(object) {
   }).filter(Boolean);
 }
 
-function isExpectedInvoicePayment(object, expectedSubscriptionId = "") {
+function invoicePaymentPlan(object, expectedSubscriptionId = "") {
   const subscriptionId = invoiceSubscriptionId(object);
+  const plans = [...new Set(invoicePriceIds(object).map(planForStripePriceId).filter(Boolean))];
+  const plan = plans.length === 1 ? plans[0] : null;
+  const metadata = object?.parent?.subscription_details?.metadata || object?.metadata || {};
+  const claimedPlan = metadata.plan ? membershipPlan(metadata.plan) : plan;
+  const claimedPrice = String(metadata.price_id || "");
   return String(object?.currency || "").toLowerCase() === "usd" &&
-    Number(object?.amount_paid) === ANNUAL_PRICE_CENTS &&
+    plan && claimedPlan?.code === plan.code &&
+    (!claimedPrice || planForStripePriceId(claimedPrice)?.code === plan.code) &&
+    Number(object?.amount_paid) === plan.priceCents &&
     subscriptionId.startsWith("sub_") &&
-    (!expectedSubscriptionId || subscriptionId === expectedSubscriptionId) &&
-    invoicePriceIds(object).includes(env("STRIPE_PRICE_ID"));
+    (!expectedSubscriptionId || subscriptionId === expectedSubscriptionId)
+    ? plan
+    : null;
+}
+
+function isExpectedInvoicePayment(object, expectedSubscriptionId = "") {
+  return Boolean(invoicePaymentPlan(object, expectedSubscriptionId));
 }
 
 function verifySignature(raw, header) {
@@ -90,22 +122,39 @@ module.exports = async function handler(request, response) {
     const object = event.data?.object || {};
     let userId = object.metadata?.user_id || object.client_reference_id || "";
 
-    if (event.type === "checkout.session.completed" && userId && isExpectedCheckoutPayment(object)) {
-      const until = new Date(Date.now() + 365 * 86400000);
-      await extendAccess(userId, until, {
-        subscription_status:"active",
-        stripe_customer_id:String(object.customer || ""),
-        stripe_subscription_id:String(object.subscription || "")
-      });
+    if (event.type === "checkout.session.completed" && userId) {
+      const plan = checkoutPaymentPlan(object);
+      const invoiceId = typeof object.invoice === "string" ? object.invoice : object.invoice?.id;
+      if (plan && invoiceId) {
+        const invoice = await stripeObject(`invoices/${encodeURIComponent(invoiceId)}`);
+        const invoicePlan = invoicePaymentPlan(invoice, String(object.subscription || ""));
+        const periodEnd = invoice.lines?.data?.reduce((latest, line) => Math.max(latest, Number(line.period?.end) || 0), 0) || 0;
+        if (invoicePlan?.code === plan.code && periodEnd) {
+          await extendAccess(userId, new Date(periodEnd * 1000), {
+            subscription_status:"active",
+            stripe_customer_id:String(object.customer || ""),
+            stripe_subscription_id:String(object.subscription || ""),
+            membership_plan:plan.code,
+            membership_provider:"stripe"
+          });
+        }
+      }
     }
 
     if (event.type === "invoice.paid") {
       const customerProfile = object.customer ? await profileByCustomer(String(object.customer)) : null;
-      if (!userId) userId = object?.parent?.subscription_details?.metadata?.user_id || customerProfile?.id || "";
+      const metadataUserId = object?.parent?.subscription_details?.metadata?.user_id || "";
+      if (!userId) userId = metadataUserId || customerProfile?.id || "";
       const periodEnd = object.lines?.data?.reduce((latest, line) => Math.max(latest, Number(line.period?.end) || 0), 0) || 0;
       const subscriptionId = invoiceSubscriptionId(object);
-      if (userId && periodEnd && isExpectedInvoicePayment(object, customerProfile?.stripe_subscription_id || "")) {
-        await extendAccess(userId, new Date(periodEnd * 1000), {subscription_status:"active", stripe_subscription_id:subscriptionId});
+      const plan = invoicePaymentPlan(object, metadataUserId ? "" : customerProfile?.stripe_subscription_id || "");
+      if (userId && periodEnd && plan) {
+        await extendAccess(userId, new Date(periodEnd * 1000), {
+          subscription_status:"active",
+          stripe_subscription_id:subscriptionId,
+          membership_plan:plan.code,
+          membership_provider:"stripe"
+        });
       }
     }
 
@@ -162,6 +211,8 @@ module.exports = async function handler(request, response) {
 module.exports.config = {api:{bodyParser:false}};
 module.exports.isExpectedCheckoutPayment = isExpectedCheckoutPayment;
 module.exports.isExpectedInvoicePayment = isExpectedInvoicePayment;
+module.exports.checkoutPaymentPlan = checkoutPaymentPlan;
+module.exports.invoicePaymentPlan = invoicePaymentPlan;
 module.exports.stripeAccessAction = stripeAccessAction;
 module.exports.invoiceSubscriptionId = invoiceSubscriptionId;
 module.exports.invoicePriceIds = invoicePriceIds;

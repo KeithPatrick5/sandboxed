@@ -1,14 +1,20 @@
-SANDBOXED SECURITY AUDIT UPDATE — STEPS 1–10
+SANDBOXED MONTHLY + ANNUAL MEMBERSHIP UPDATE
 
 Do these in this order:
 
-1. In Namecheap cPanel File Manager, open /home/dropdebs/sandboxed.
-2. Upload Sandboxed-security-audit-steps-1-10-final.zip into that folder.
-3. Extract it into /home/dropdebs/sandboxed and allow the files to overwrite.
-4. In cPanel Setup Node.js App, confirm the startup file is cpanel.js.
-5. Restart sandboxed.lol.
+1. In the Stripe Sandboxed product, add a recurring $6.99 USD monthly price.
+2. Copy its price_... ID. Do not replace or archive the existing $30 annual price.
+3. In Supabase SQL Editor, run supabase-monthly-plan.sql once.
+4. In cPanel Setup Node.js App, add STRIPE_MONTHLY_PRICE_ID with the new monthly price ID.
+5. In cPanel File Manager, open /home/dropdebs/sandboxed.
+6. Upload Sandboxed-monthly-plan-ready.zip into that folder.
+7. Extract it into exactly /home/dropdebs/sandboxed and allow the files to overwrite.
+8. Confirm the startup file is cpanel.js, then restart sandboxed.lol.
+9. Open /api/config and confirm monthly price 6.99 and annual price 30.
+10. Test one monthly card checkout before selling the monthly plan.
 
 Do not extract the ZIP in /home/dropdebs or public_html.
 Do not delete or replace the environment variables.
-The Step 2 and Step 3 Supabase SQL was already applied. No additional SQL is required for this update.
-Keep the configured STRIPE_PRICE_ID, SENTRY_DSN, and SENTRY_ENVIRONMENT variables.
+Keep STRIPE_PRICE_ID as the existing $30 annual Stripe price.
+STRIPE_MONTHLY_PRICE_ID must be the new recurring $6.99/month Stripe price.
+No NOWPayments setting changes are needed; crypto remains annual-only.

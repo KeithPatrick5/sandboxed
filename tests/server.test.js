@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   TRIAL_HOURS,
+  MONTHLY_PRICE_USD,
+  MONTHLY_PRICE_CENTS,
   ANNUAL_PRICE_USD,
   ANNUAL_PRICE_CENTS,
   MAX_DEVICES,
@@ -20,6 +22,8 @@ const {
 
 test("membership policy constants match the approved rules", () => {
   assert.equal(TRIAL_HOURS, 72);
+  assert.equal(MONTHLY_PRICE_USD, 6.99);
+  assert.equal(MONTHLY_PRICE_CENTS, 699);
   assert.equal(ANNUAL_PRICE_USD, 30);
   assert.equal(ANNUAL_PRICE_CENTS, 3000);
   assert.equal(MAX_DEVICES, 4);

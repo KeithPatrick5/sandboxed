@@ -7,7 +7,17 @@
   const statusButton = document.querySelector("#membership-status");
   const closeButton = document.querySelector("#close-membership");
 
-  let config = {membershipEnabled:false, annualPrice:30, currency:"USD", maxDevices:4, maxStreams:2};
+  let config = {
+    membershipEnabled:false,
+    annualPrice:30,
+    currency:"USD",
+    plans:{
+      monthly:{price:6.99, interval:"month", cardEnabled:false, cryptoEnabled:false},
+      annual:{price:30, interval:"year", cardEnabled:false, cryptoEnabled:false}
+    },
+    maxDevices:4,
+    maxStreams:2
+  };
   let configLoaded = false;
   let session = loadSession();
   let account = null;
@@ -16,6 +26,7 @@
   let heartbeatTimer = null;
   let playbackSessionId = null;
   let recoveryMode = false;
+  let selectedPlan = "annual";
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>'"]/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[character]);
@@ -169,7 +180,22 @@
   }
 
   function annualPrice() {
-    return Number(config.annualPrice) || 30;
+    return Number(config.plans?.annual?.price ?? config.annualPrice) || 30;
+  }
+
+  function monthlyPrice() {
+    return Number(config.plans?.monthly?.price) || 6.99;
+  }
+
+  function priceLabel(value) {
+    return Number(value).toLocaleString(undefined, {minimumFractionDigits:Number(value) % 1 ? 2 : 0, maximumFractionDigits:2});
+  }
+
+  function planDetails(code) {
+    const fallback = code === "monthly"
+      ? {price:monthlyPrice(), interval:"month", cardEnabled:Boolean(config.stripeEnabled), cryptoEnabled:false}
+      : {price:annualPrice(), interval:"year", cardEnabled:Boolean(config.stripeEnabled), cryptoEnabled:Boolean(config.nowPaymentsEnabled)};
+    return {...fallback, ...(config.plans?.[code] || {})};
   }
 
   function statusLabel(profile) {
@@ -359,19 +385,45 @@
     if (message) setMessage(message, true);
   }
 
-  function paymentButtons() {
-    return `<div class="payment-actions">
-      <button class="membership-primary" type="button" data-checkout="stripe" ${config.stripeEnabled ? "" : "disabled"}>Pay $${annualPrice()} with card</button>
-      <button class="membership-secondary" type="button" data-checkout="nowpayments" ${config.nowPaymentsEnabled ? "" : "disabled"}>Pay with Bitcoin or crypto</button>
-    </div>${!config.stripeEnabled || !config.nowPaymentsEnabled ? '<p class="membership-small">Payment buttons activate when the private processor keys are connected.</p>' : ""}`;
+  function planChooser() {
+    const monthly = planDetails("monthly");
+    const annual = planDetails("annual");
+    const savings = priceLabel(monthly.price * 12 - annual.price);
+    const plan = planDetails(selectedPlan);
+    const intervalLabel = selectedPlan === "monthly" ? "month" : "year";
+    const renewalCopy = selectedPlan === "monthly"
+      ? "Automatically renews monthly. Cancel anytime. Crypto is available with the annual plan."
+      : "Card renews annually. Crypto provides 365 days and does not automatically renew.";
+    return `<div class="plan-options" role="group" aria-label="Choose a membership plan">
+      <button class="plan-option ${selectedPlan === "monthly" ? "is-selected" : ""}" type="button" data-plan-option="monthly" aria-pressed="${selectedPlan === "monthly"}">
+        <span class="plan-option-top"><strong>Monthly</strong><span>Flexible</span></span>
+        <span class="plan-option-price"><b>$${priceLabel(monthly.price)}</b><small>/ month</small></span>
+        <span class="plan-option-detail">Lower upfront cost</span>
+      </button>
+      <button class="plan-option ${selectedPlan === "annual" ? "is-selected" : ""}" type="button" data-plan-option="annual" aria-pressed="${selectedPlan === "annual"}">
+        <span class="plan-option-badge">Best value</span>
+        <span class="plan-option-top"><strong>Annual</strong><span>Save $${savings}</span></span>
+        <span class="plan-option-price"><b>$${priceLabel(annual.price)}</b><small>/ year</small></span>
+        <span class="plan-option-detail">$${priceLabel(annual.price / 12)}/month billed annually</span>
+      </button>
+    </div>
+    <div class="payment-section">
+      <p class="payment-label">Payment method</p>
+      <div class="payment-actions">
+        <button class="membership-primary" type="button" data-checkout="stripe" data-plan="${selectedPlan}" ${plan.cardEnabled ? "" : "disabled"}>Continue with card · $${priceLabel(plan.price)}/${intervalLabel}</button>
+        ${selectedPlan === "annual" ? `<button class="membership-secondary" type="button" data-checkout="nowpayments" data-plan="annual" ${plan.cryptoEnabled ? "" : "disabled"}>Pay $${priceLabel(plan.price)} with Bitcoin or crypto</button>` : ""}
+      </div>
+      <p class="plan-renewal-copy">${renewalCopy}</p>
+      ${!plan.cardEnabled || (selectedPlan === "annual" && !plan.cryptoEnabled) ? '<p class="membership-small">Unavailable payment methods activate when their private processor settings are connected.</p>' : ""}
+    </div>`;
   }
 
   function cryptoRenewalButton() {
     return `<div class="payment-actions">
-      <button class="membership-secondary" type="button" data-checkout="nowpayments" ${config.nowPaymentsEnabled ? "" : "disabled"}>Renew $${annualPrice()} with Bitcoin or crypto</button>
+      <button class="membership-secondary" type="button" data-checkout="nowpayments" data-plan="annual" ${planDetails("annual").cryptoEnabled ? "" : "disabled"}>Renew $${priceLabel(annualPrice())} with Bitcoin or crypto</button>
     </div>
     <p class="membership-small">Renewing adds another 365 days after your current paid-through date.</p>
-    ${!config.nowPaymentsEnabled ? '<p class="membership-small">Crypto renewal activates when the private processor keys are connected.</p>' : ""}`;
+    ${!planDetails("annual").cryptoEnabled ? '<p class="membership-small">Crypto renewal activates when the private processor keys are connected.</p>' : ""}`;
   }
 
   function supportLine() {
@@ -386,8 +438,8 @@
       try {
         const endpoint = button.dataset.checkout === "stripe" ? "/api/stripe-checkout" : "/api/nowpayments-invoice";
         // Namecheap/LiteSpeed rejects bodyless POST requests before they reach
-        // the Node app. An empty JSON object keeps checkout requests routable.
-        const payload = await authorizedFetch(endpoint, {method:"POST", body:"{}"});
+        // the Node app. A small JSON plan body keeps checkout requests routable.
+        const payload = await authorizedFetch(endpoint, {method:"POST", body:JSON.stringify({plan:button.dataset.plan || "annual"})});
         location.href = payload.url;
       } catch (error) {
         setMessage(error.message, true);
@@ -398,11 +450,16 @@
 
   function renderPaywall(message = "") {
     const blocked = trialUnavailable();
-    content.innerHTML = `${panelHeader(blocked ? "TRIAL UNAVAILABLE" : "TRIAL COMPLETE", `Keep Sandboxed for $${annualPrice()} a year`, blocked ? "This account can still subscribe and use Sandboxed normally." : "Your account, saved list, and four registered devices stay available after payment.")}
-      <div class="membership-price"><strong>$${annualPrice()}</strong><span>per year</span></div>${paymentButtons()}
-      <ul class="membership-features"><li>Four registered devices</li><li>Two simultaneous streams</li><li>Card, Bitcoin, or other supported crypto</li><li>Crypto network minimums may vary</li></ul>
+    content.innerHTML = `${panelHeader(blocked ? "TRIAL UNAVAILABLE" : "CHOOSE A PLAN", "Keep watching with Sandboxed", blocked ? "This device has already used its free trial. Choose a membership to continue." : "Simple access on up to four devices, with two streams at once.")}
+      ${planChooser()}
+      <ul class="membership-features"><li>Four registered devices</li><li>Two simultaneous streams</li><li>Cancel card renewals anytime</li></ul>
       ${supportLine()}
       <button class="membership-text-button" type="button" id="paywall-signout">Sign out</button><p class="membership-message" id="membership-message"></p>`;
+    content.querySelectorAll("[data-plan-option]").forEach((button) => button.addEventListener("click", () => {
+      selectedPlan = button.dataset.planOption;
+      renderPaywall();
+      content.querySelector(`[data-plan-option="${selectedPlan}"]`)?.focus();
+    }));
     bindPaymentButtons();
     content.querySelector("#paywall-signout").addEventListener("click", signOut);
     if (message) setMessage(message, true);
@@ -421,13 +478,16 @@
             : "Your three days begin when your first video starts."
           : "Your free trial has ended.";
     const devices = (account.devices || []).map((device) => `<li><span><strong>${escapeHtml(device.name)}</strong><small>${device.id === account.deviceId ? "This device" : `Last used ${formatDate(device.last_seen_at)}`}</small></span>${device.id === account.deviceId ? '<b>Current</b>' : `<button type="button" data-remove-device="${escapeHtml(device.id)}">Remove</button>`}</li>`).join("");
+    const billingPlan = account.billing?.plan === "monthly" ? "Monthly plan" : "Annual plan";
+    const billingProvider = account.billing?.provider === "stripe" ? "Card" : account.billing?.provider === "nowpayments" ? "Crypto" : "";
     content.innerHTML = `${panelHeader("ACCOUNT", account.user.email, statusCopy)}
-      <div class="account-status"><span>${escapeHtml(statusLabel(profile))}</span><small>${config.maxDevices} devices · ${config.maxStreams} streams at once</small></div>
+      <div class="account-status"><span>${escapeHtml(statusLabel(profile))}</span><small>${profile.state === "active" ? `${billingPlan}${billingProvider ? ` · ${billingProvider}` : ""} · ` : ""}${config.maxDevices} devices · ${config.maxStreams} streams at once</small></div>
       <div class="device-heading"><strong>Devices</strong><span>${account.devices.length}/${config.maxDevices}</span></div><ul class="device-list">${devices || "<li>No registered devices</li>"}</ul>
-      ${profile.state === "active" && account.billing?.hasStripeCustomer ? '<button class="membership-secondary" type="button" id="billing-portal">Manage card subscription</button>' : profile.state === "active" ? cryptoRenewalButton() : paymentButtons()}
+      ${profile.state === "active" && account.billing?.provider === "stripe" ? '<button class="membership-secondary" type="button" id="billing-portal">Manage card subscription</button>' : profile.state === "active" ? cryptoRenewalButton() : '<button class="membership-primary" type="button" id="choose-membership">View membership plans</button>'}
       ${supportLine()}
       <button class="membership-text-button" type="button" id="account-signout">Sign out</button><p class="membership-message" id="membership-message"></p>`;
     bindPaymentButtons();
+    content.querySelector("#choose-membership")?.addEventListener("click", () => renderPaywall());
     content.querySelector("#account-signout").addEventListener("click", signOut);
     content.querySelector("#billing-portal")?.addEventListener("click", async (event) => {
       event.currentTarget.disabled = true;

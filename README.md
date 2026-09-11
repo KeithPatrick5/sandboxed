@@ -8,8 +8,9 @@ Sandboxed is an isolated movie and series interface with device-specific playbac
 - One three-day no-card trial beginning on first playback
 - Repeat-trial protection using a server-signed HttpOnly device cookie plus hashed browser-fingerprint and network signals; blocked trials receive a clear payment-required message
 - Four registered devices, two simultaneous streams, and two device replacements per rolling 30 days
-- $30 USD yearly Stripe subscription with Checkout, verified webhooks, customer billing portal, refund/dispute suspension, and access through the paid period after cancellation
+- $6.99 USD monthly and $30 USD yearly recurring Stripe subscriptions with Checkout, verified webhooks, customer billing portal, refund/dispute suspension, and access through the paid period after cancellation
 - $30 USD NOWPayments cryptocurrency purchase granting 365 days, with early renewal that stacks after the current paid-through date, verified multi-status IPN callbacks, and authenticated missed-callback reconciliation
+- An annual-first plan chooser with clear renewal terms; cryptocurrency is intentionally available only for the annual plan
 - Server-side playback authorization, stale-session cleanup, distinct-device stream counting, and fail-closed access checks
 - GET-only catalog access with request coalescing, bounded server caching, and separate browse/search rate limits
 - Long account identifiers wrap safely on desktop and mobile
@@ -31,13 +32,13 @@ Open `http://localhost:3000`. This runs the same standalone Node application use
 
 Deploy the folder root to Vercel with no build command. Set `TMDB_READ_TOKEN` (recommended) or `TMDB_API_KEY` for current metadata.
 
-1. Run `supabase-setup.sql` once in the Supabase SQL editor.
+1. Run `supabase-setup.sql` once in the Supabase SQL editor. Existing installations can run the smaller idempotent `supabase-monthly-plan.sql` upgrade instead.
 2. Copy `.env.example` keys into Vercel Production environment variables. Never commit the values.
 3. In Supabase Auth URL Configuration, set the Site URL to `https://sandboxed-tv.vercel.app` and add the same URL to Redirect URLs.
 4. In Stripe, send the required events—including `charge.refunded`, `charge.dispute.created`, and `charge.dispute.closed`—to `https://sandboxed-tv.vercel.app/api/stripe-webhook` and store the signing secret as `STRIPE_WEBHOOK_SECRET`.
 5. In NOWPayments, store the API and IPN secrets in Vercel. The app supplies its callback URL when it creates an invoice.
 
-Required membership variables are `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `DEVICE_HASH_SECRET`. Stripe also requires `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the fixed annual `STRIPE_PRICE_ID`. Stripe and NOWPayments activate independently when their respective variables are present.
+Required membership variables are `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, and `DEVICE_HASH_SECRET`. Stripe also requires `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, the annual recurring `STRIPE_PRICE_ID`, and the monthly recurring `STRIPE_MONTHLY_PRICE_ID`. Stripe and NOWPayments activate independently when their respective variables are present.
 
 Optional server error monitoring uses `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, and `SENTRY_RELEASE`. The DSN is an ingestion credential, not a Sentry account API token. Do not put `SENTRY_AUTH_TOKEN` in the website environment.
 
@@ -51,7 +52,7 @@ The repository also runs as a single cPanel Node application without third-party
 4. Set `SITE_URL=https://sandboxed.lol`. Configure Supabase redirects for that domain and send Stripe webhooks—including `charge.refunded`, `charge.dispute.created`, and `charge.dispute.closed`—to `https://sandboxed.lol/api/stripe-webhook`.
 5. Start or restart the application and confirm `https://sandboxed.lol/healthz` returns `{\"ok\":true}`.
 
-The standalone server redirects `www.sandboxed.lol` to the apex domain and includes the security, cache-control, request-size, and API routing behavior required by cPanel/LiteSpeed. Payment POST requests intentionally send an empty JSON body so LiteSpeed forwards them to the Node application.
+The standalone server redirects `www.sandboxed.lol` to the apex domain and includes the security, cache-control, request-size, and API routing behavior required by cPanel/LiteSpeed. Payment POST requests intentionally send a JSON body so LiteSpeed forwards them to the Node application.
 
 For packaged updates, upload the provided ZIP while already inside `/home/dropdebs/sandboxed`, extract it to that same directory, allow overwrites, and restart the Node application. Do not extract into `/home/dropdebs` or `public_html`. Do not replace the configured environment variables.
 

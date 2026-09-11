@@ -7,6 +7,8 @@ create table if not exists public.profiles (
   trial_ends_at timestamptz,
   access_until timestamptz,
   subscription_status text not null default 'none',
+  membership_plan text,
+  membership_provider text,
   stripe_customer_id text,
   stripe_subscription_id text,
   created_at timestamptz not null default now(),
@@ -45,6 +47,39 @@ alter table public.trial_claims
   foreign key (user_id) references auth.users(id) on delete set null;
 
 -- Safe upgrades for projects created from an earlier version of this file.
+alter table public.profiles add column if not exists membership_plan text;
+alter table public.profiles add column if not exists membership_provider text;
+update public.profiles
+set membership_plan = coalesce(membership_plan, 'annual'),
+    membership_provider = coalesce(
+      membership_provider,
+      case when stripe_customer_id is not null then 'stripe' else 'nowpayments' end
+    )
+where access_until is not null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'profiles_membership_plan_check'
+      and conrelid = 'public.profiles'::regclass
+  ) then
+    alter table public.profiles
+      add constraint profiles_membership_plan_check
+      check (membership_plan is null or membership_plan in ('monthly', 'annual'));
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'profiles_membership_provider_check'
+      and conrelid = 'public.profiles'::regclass
+  ) then
+    alter table public.profiles
+      add constraint profiles_membership_provider_check
+      check (membership_provider is null or membership_provider in ('stripe', 'nowpayments'));
+  end if;
+end
+$$;
+
 alter table public.devices add column if not exists fingerprint_v2_hash text;
 alter table public.trial_claims add column if not exists fingerprint_v2_hash text;
 create unique index if not exists trial_claims_fingerprint_v2_idx

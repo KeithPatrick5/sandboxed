@@ -9,6 +9,7 @@ const {clientIp} = require("../lib/server");
 
 const root = path.join(__dirname, "..");
 process.env.STRIPE_PRICE_ID = "price_sandboxed_annual";
+process.env.STRIPE_MONTHLY_PRICE_ID = "price_sandboxed_monthly";
 
 test("the browser cannot fall back to an ungated player URL", () => {
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
@@ -96,7 +97,7 @@ test("public authentication actions have per-network abuse limits", () => {
 
 test("payment and billing requests include JSON so LiteSpeed routes their POSTs", () => {
   const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
-  assert.match(membership, /authorizedFetch\(endpoint, \{method:"POST", body:"\{\}"\}\)/);
+  assert.match(membership, /authorizedFetch\(endpoint, \{method:"POST", body:JSON\.stringify\(\{plan:/);
   assert.match(membership, /authorizedFetch\("\/api\/stripe-portal", \{method:"POST", body:"\{\}"\}\)/);
 });
 
@@ -106,14 +107,19 @@ test("client IP uses the proxy-appended address instead of a spoofed first value
   assert.equal(clientIp({headers:{}, socket:{remoteAddress:"127.0.0.1"}}), "127.0.0.1");
 });
 
-test("Stripe access requires the expected paid USD amount", () => {
-  const checkout = {payment_status:"paid", currency:"usd", amount_total:3000, subscription:"sub_expected", metadata:{price_id:"price_sandboxed_annual"}};
-  const invoice = {currency:"usd", amount_paid:3000, parent:{subscription_details:{subscription:"sub_expected"}}, lines:{data:[{pricing:{price_details:{price:"price_sandboxed_annual"}}}]}};
+test("Stripe access requires an allowlisted plan, price, and exact USD amount", () => {
+  const checkout = {payment_status:"paid", currency:"usd", amount_total:3000, subscription:"sub_expected", metadata:{plan:"annual", price_id:"price_sandboxed_annual"}};
+  const monthlyCheckout = {...checkout, amount_total:699, metadata:{plan:"monthly", price_id:"price_sandboxed_monthly"}};
+  const invoice = {currency:"usd", amount_paid:3000, parent:{subscription_details:{subscription:"sub_expected", metadata:{plan:"annual", price_id:"price_sandboxed_annual"}}}, lines:{data:[{pricing:{price_details:{price:"price_sandboxed_annual"}}}]}};
+  const monthlyInvoice = {currency:"usd", amount_paid:699, parent:{subscription_details:{subscription:"sub_monthly", metadata:{plan:"monthly", price_id:"price_sandboxed_monthly"}}}, lines:{data:[{pricing:{price_details:{price:"price_sandboxed_monthly"}}}]}};
   assert.equal(stripeWebhook.isExpectedCheckoutPayment(checkout), true);
+  assert.equal(stripeWebhook.checkoutPaymentPlan(monthlyCheckout)?.code, "monthly");
   assert.equal(stripeWebhook.isExpectedCheckoutPayment({...checkout, metadata:{price_id:"price_wrong"}}), false);
+  assert.equal(stripeWebhook.isExpectedCheckoutPayment({...checkout, metadata:{plan:"monthly", price_id:"price_sandboxed_annual"}}), false);
   assert.equal(stripeWebhook.isExpectedCheckoutPayment({...checkout, amount_total:100}), false);
   assert.equal(stripeWebhook.isExpectedCheckoutPayment({...checkout, currency:"eur"}), false);
   assert.equal(stripeWebhook.isExpectedInvoicePayment(invoice, "sub_expected"), true);
+  assert.equal(stripeWebhook.invoicePaymentPlan(monthlyInvoice, "sub_monthly")?.code, "monthly");
   assert.equal(stripeWebhook.isExpectedInvoicePayment({...invoice, amount_paid:2999}, "sub_expected"), false);
   assert.equal(stripeWebhook.isExpectedInvoicePayment(invoice, "sub_other"), false);
   assert.equal(stripeWebhook.isExpectedInvoicePayment({...invoice, lines:{data:[]}}, "sub_expected"), false);
@@ -130,11 +136,16 @@ test("Stripe refunds and disputes suspend access while won disputes restore it",
   assert.match(server, /suspendMembershipAccess[\s\S]*watch_sessions/);
 });
 
-test("checkout prices are generated from the same server-side $30 policy", () => {
+test("checkout uses server-side monthly and annual plan allowlists", () => {
   const stripeCheckout = fs.readFileSync(path.join(root, "api/stripe-checkout.js"), "utf8");
+  const server = fs.readFileSync(path.join(root, "lib/server.js"), "utf8");
   const nowPaymentsInvoice = fs.readFileSync(path.join(root, "api/nowpayments-invoice.js"), "utf8");
   assert.match(stripeCheckout, /line_items\[0\]\[price\]/);
-  assert.match(stripeCheckout, /STRIPE_PRICE_ID/);
+  assert.match(stripeCheckout, /stripePriceIdForPlan/);
+  assert.match(stripeCheckout, /membershipPlan/);
+  assert.match(stripeCheckout, /metadata\[plan\]/);
+  assert.match(server, /STRIPE_MONTHLY_PRICE_ID/);
+  assert.match(server, /STRIPE_ANNUAL_PRICE_ID.*STRIPE_PRICE_ID/);
   assert.match(stripeCheckout, /Idempotency-Key/);
   assert.match(stripeCheckout, /stripe-checkout:/);
   assert.match(nowPaymentsInvoice, /price_amount:ANNUAL_PRICE_USD/);
@@ -182,9 +193,9 @@ test("NOWPayments invoices can recover from a missed final callback", () => {
 test("active crypto memberships can renew early without reopening a paid invoice", () => {
   const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
   const webhook = fs.readFileSync(path.join(root, "api/nowpayments-ipn.js"), "utf8");
-  assert.match(membership, /Renew \$\$\{annualPrice\(\)\} with Bitcoin or crypto/);
+  assert.match(membership, /Renew \$\$\{priceLabel\(annualPrice\(\)\)\} with Bitcoin or crypto/);
   assert.match(membership, /adds another 365 days after your current paid-through date/);
-  assert.match(membership, /profile\.state === "active" \? cryptoRenewalButton\(\)/);
+  assert.match(membership, /account\.billing\?\.provider === "stripe"[\s\S]*cryptoRenewalButton\(\)/);
   assert.match(webhook, /provider=eq\.nowpayments_invoice/);
   assert.match(webhook, /body:\{status:String\(status \|\| "finished"\)\}/);
 
@@ -192,6 +203,24 @@ test("active crypto memberships can renew early without reopening a paid invoice
   const future = "2027-09-10T00:00:00.000Z";
   assert.equal(nowPaymentsWebhook.nextCryptoAccessUntil(future, now), "2028-09-09T00:00:00.000Z");
   assert.equal(nowPaymentsWebhook.nextCryptoAccessUntil("2025-01-01T00:00:00.000Z", now), "2027-09-10T00:00:00.000Z");
+});
+
+test("the plan chooser defaults to annual and never offers monthly crypto", () => {
+  const membership = fs.readFileSync(path.join(root, "membership.js"), "utf8");
+  const invoice = fs.readFileSync(path.join(root, "api/nowpayments-invoice.js"), "utf8");
+  assert.match(membership, /selectedPlan = "annual"/);
+  assert.match(membership, /Best value/);
+  assert.match(membership, /Crypto is available with the annual plan/);
+  assert.match(membership, /selectedPlan === "annual" \? `<button[\s\S]*data-checkout="nowpayments"/);
+  assert.match(invoice, /CRYPTO_ANNUAL_ONLY/);
+});
+
+test("the Supabase upgrade preserves old paid accounts as annual", () => {
+  const migration = fs.readFileSync(path.join(root, "supabase-monthly-plan.sql"), "utf8");
+  assert.match(migration, /add column if not exists membership_plan/);
+  assert.match(migration, /coalesce\(membership_plan, 'annual'\)/);
+  assert.match(migration, /when stripe_customer_id is not null then 'stripe'/);
+  assert.match(migration, /where access_until is not null/);
 });
 
 test("My List switches storage namespaces when the signed-in account changes", () => {

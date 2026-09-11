@@ -755,7 +755,7 @@ input:focus-visible {
 
 .membership-panel {
   position: relative;
-  width: min(520px, 100%);
+  width: min(620px, 100%);
   max-height: min(760px, calc(100vh - 40px));
   overflow-y: auto;
   padding: 32px;
@@ -934,6 +934,111 @@ input:focus-visible {
 .membership-price span { color: #9b9ba3; font-size: 0.82rem; }
 .payment-actions { display: grid; gap: 10px; }
 
+.plan-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.plan-option {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  gap: 13px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+  background: #18181b;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.plan-option:hover { border-color: rgba(255, 255, 255, 0.42); }
+
+.plan-option.is-selected {
+  border-color: var(--red);
+  background: linear-gradient(145deg, rgba(255, 33, 79, 0.12), rgba(255, 33, 79, 0.025) 68%), #18181b;
+  box-shadow: inset 0 3px 0 var(--red);
+}
+
+.plan-option-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-option-top strong {
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.plan-option-top > span {
+  color: #8d8d96;
+  font-size: 0.66rem;
+  font-weight: 750;
+}
+
+.plan-option.is-selected .plan-option-top > span { color: #ff8aa3; }
+
+.plan-option-price {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.plan-option-price b {
+  font-size: clamp(2rem, 7vw, 2.65rem);
+  line-height: 0.9;
+  letter-spacing: -0.06em;
+}
+
+.plan-option-price small,
+.plan-option-detail {
+  color: #8c8c95;
+  font-size: 0.68rem;
+}
+
+.plan-option-badge {
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  padding: 5px 8px;
+  border-radius: 2px;
+  background: var(--red);
+  color: #fff;
+  font-size: 0.55rem;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.payment-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.payment-label {
+  margin: 0 0 10px;
+  color: #7e7e87;
+  font-size: 0.61rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.plan-renewal-copy {
+  margin: 10px 0 0;
+  color: #82828a;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
 .membership-features {
   display: grid;
   gap: 8px;
@@ -959,6 +1064,7 @@ input:focus-visible {
 
 .account-status span { color: #75dda0; font-size: 0.72rem; font-weight: 900; letter-spacing: 0.09em; }
 .account-status small { color: #85858d; font-size: 0.7rem; }
+.account-status small { max-width: 68%; text-align: right; line-height: 1.45; }
 
 .device-heading {
   display: flex;
