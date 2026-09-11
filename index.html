@@ -43,9 +43,9 @@
           <div class="hero-scrim"></div>
           <div class="hero-content">
             <div class="eyebrow"><span>S</span> SANDBOXED</div>
-            <h1>THE<br /><em>ODYSSEY</em></h1>
-            <div class="hero-meta"><strong>Trending Now</strong><span>2026</span><span>PG-13</span><span>2h 35m</span></div>
-            <p>Odysseus, the legendary King of Ithaca, begins a dangerous journey home after the Trojan War, facing gods, monsters and impossible trials.</p>
+            <h1 id="hero-title">THE<br /><em>ODYSSEY</em></h1>
+            <div class="hero-meta" id="hero-meta"><strong>Trending Now</strong><span>2026</span><span>Movie</span></div>
+            <p id="hero-overview">Odysseus, the legendary King of Ithaca, begins a dangerous journey home after the Trojan War, facing gods, monsters and impossible trials.</p>
             <div class="hero-actions">
               <button class="primary-button" type="button" id="hero-play"><span class="play-triangle" aria-hidden="true"></span> Play</button>
               <button class="secondary-button" type="button" id="hero-list">+ My List</button>
@@ -68,9 +68,21 @@
           <p id="browse-title">Search</p>
           <label class="search-field">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4.2 4.2"></path></svg>
-            <input id="search-input" placeholder="Titles, genres, or years" aria-label="Search titles, genres, or years" autocomplete="off" />
+            <input id="search-input" placeholder="Search titles" aria-label="Search titles" autocomplete="off" />
             <button type="button" id="clear-search" aria-label="Clear search" hidden>×</button>
           </label>
+        </div>
+        <div class="browse-filters" id="browse-filters" aria-label="Catalog filters" hidden>
+          <button type="button" class="is-active" data-catalog-filter="popular">Popular</button>
+          <button type="button" data-catalog-filter="new">New</button>
+          <button type="button" data-catalog-filter="top_rated">Top Rated</button>
+          <button type="button" data-catalog-filter="action">Action</button>
+          <button type="button" data-catalog-filter="comedy">Comedy</button>
+          <button type="button" data-catalog-filter="horror">Horror</button>
+          <button type="button" data-catalog-filter="crime">Crime</button>
+          <button type="button" data-catalog-filter="science_fiction">Sci-Fi</button>
+          <button type="button" data-catalog-filter="documentary">Documentary</button>
+          <button type="button" data-catalog-filter="family">Family</button>
         </div>
         <p class="catalog-status" id="catalog-status" aria-live="polite"></p>
         <div class="catalog-grid" id="catalog-grid"></div>

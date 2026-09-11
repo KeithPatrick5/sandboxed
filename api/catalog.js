@@ -5,6 +5,43 @@ const {rateLimit} = require("../lib/server");
 const catalogCache = new Map();
 const MAX_CACHE_ENTRIES = 500;
 
+const BROWSE_COLLECTIONS = Object.freeze({
+  movie:Object.freeze({
+    popular:{label:"Popular", path:"/movie/popular"},
+    new:{label:"New", path:"/movie/now_playing"},
+    top_rated:{label:"Top Rated", path:"/movie/top_rated"},
+    action:{label:"Action", path:"/discover/movie", params:{with_genres:"28"}},
+    comedy:{label:"Comedy", path:"/discover/movie", params:{with_genres:"35"}},
+    horror:{label:"Horror", path:"/discover/movie", params:{with_genres:"27"}},
+    crime:{label:"Crime", path:"/discover/movie", params:{with_genres:"80"}},
+    science_fiction:{label:"Science Fiction", path:"/discover/movie", params:{with_genres:"878"}},
+    documentary:{label:"Documentary", path:"/discover/movie", params:{with_genres:"99"}},
+    family:{label:"Family", path:"/discover/movie", params:{with_genres:"10751"}}
+  }),
+  tv:Object.freeze({
+    popular:{label:"Popular", path:"/tv/popular"},
+    new:{label:"New", path:"/tv/on_the_air"},
+    top_rated:{label:"Top Rated", path:"/tv/top_rated"},
+    action:{label:"Action & Adventure", path:"/discover/tv", params:{with_genres:"10759"}},
+    comedy:{label:"Comedy", path:"/discover/tv", params:{with_genres:"35"}},
+    horror:{label:"Horror & Mystery", path:"/discover/tv", params:{with_genres:"9648"}},
+    crime:{label:"Crime", path:"/discover/tv", params:{with_genres:"80"}},
+    science_fiction:{label:"Sci-Fi & Fantasy", path:"/discover/tv", params:{with_genres:"10765"}},
+    documentary:{label:"Documentary", path:"/discover/tv", params:{with_genres:"99"}},
+    family:{label:"Family", path:"/discover/tv", params:{with_genres:"10751"}}
+  })
+});
+
+const ROTATING_COLLECTIONS = Object.freeze([
+  {title:"Action Night", type:"movie", filter:"action"},
+  {title:"Need a Laugh?", type:"movie", filter:"comedy"},
+  {title:"Late-Night Horror", type:"movie", filter:"horror"},
+  {title:"Crime Stories", type:"tv", filter:"crime"},
+  {title:"Sci-Fi Worlds", type:"tv", filter:"science_fiction"},
+  {title:"True Stories", type:"movie", filter:"documentary"},
+  {title:"Family Night", type:"movie", filter:"family"}
+]);
+
 function tmdbCredentials() {
   const readToken = process.env.TMDB_READ_TOKEN?.trim();
   const apiKey = process.env.TMDB_API_KEY?.trim();
@@ -44,7 +81,11 @@ function normalize(item, fallbackType) {
     year:String(date || "").slice(0, 4),
     poster:`${TMDB_IMAGE_ORIGIN}/w500${item.poster_path}`,
     backdrop:item.backdrop_path ? `${TMDB_IMAGE_ORIGIN}/original${item.backdrop_path}` : "",
-    overview:String(item.overview || "").slice(0, 600)
+    overview:String(item.overview || "").slice(0, 600),
+    genreIds:(Array.isArray(item.genre_ids) ? item.genre_ids : [])
+      .map(Number)
+      .filter((value) => Number.isInteger(value) && value > 0)
+      .slice(0, 8)
   };
 }
 
@@ -56,6 +97,50 @@ function results(payload, fallbackType) {
 
 function unique(items) {
   return [...new Map(items.map((item) => [`${item.type}:${item.id}`, item])).values()];
+}
+
+function dailyIndex(date = new Date()) {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  return Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - start) / 86400000);
+}
+
+function rotatingCollections(date = new Date()) {
+  const offset = dailyIndex(date) % ROTATING_COLLECTIONS.length;
+  return [
+    ROTATING_COLLECTIONS[offset],
+    ROTATING_COLLECTIONS[(offset + 3) % ROTATING_COLLECTIONS.length]
+  ];
+}
+
+function takeUnseen(items, seen, maximum = 16) {
+  const selected = [];
+  for (const item of unique(items)) {
+    const key = `${item.type}:${item.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    selected.push(item);
+    if (selected.length >= maximum) break;
+  }
+  return selected;
+}
+
+function collectionRequest(type, filter, page = 1) {
+  const normalizedType = type === "tv" ? "tv" : "movie";
+  const collections = BROWSE_COLLECTIONS[normalizedType];
+  const key = Object.hasOwn(collections, filter) ? filter : "popular";
+  const collection = collections[key];
+  const discover = collection.path.startsWith("/discover/");
+  return {
+    type:normalizedType,
+    filter:key,
+    label:collection.label,
+    path:collection.path,
+    params:{
+      page,
+      ...(discover ? {sort_by:"popularity.desc", "vote_count.gte":normalizedType === "tv" ? 20 : 100} : {}),
+      ...(collection.params || {})
+    }
+  };
 }
 
 async function cached(cacheKey, ttlSeconds, loader) {
@@ -96,6 +181,7 @@ module.exports = async function handler(request, response) {
   }
   const mode = request.query?.mode === "search" ? "search" : request.query?.mode === "home" ? "home" : "browse";
   const type = request.query?.type === "tv" ? "tv" : "movie";
+  const filter = String(request.query?.filter || "popular").toLowerCase();
   const page = Math.min(500, Math.max(1, Number.parseInt(request.query?.page, 10) || 1));
   const query = String(request.query?.q || "").trim().slice(0, 80);
 
@@ -108,17 +194,41 @@ module.exports = async function handler(request, response) {
       return sendResult(request, response, 400, {error:"Enter at least two characters."});
     }
     if (mode === "home") {
-      const payload = await cached("home", 900, async () => {
-        const [trending, popularMovies, popularShows] = await Promise.all([
+      const day = new Date().toISOString().slice(0, 10);
+      const payload = await cached(`home:${day}`, 1800, async () => {
+        const rotating = rotatingCollections();
+        const rotatingRequests = rotating.map((entry) => collectionRequest(entry.type, entry.filter));
+        const homeRequests = await Promise.allSettled([
           tmdb("/trending/all/day"),
-          tmdb("/movie/popular", {page:1}),
-          tmdb("/tv/popular", {page:1})
+          tmdb("/movie/now_playing", {page:1}),
+          tmdb("/tv/on_the_air", {page:1}),
+          tmdb("/movie/top_rated", {page:1}),
+          tmdb("/tv/top_rated", {page:1}),
+          ...rotatingRequests.map((entry) => tmdb(entry.path, entry.params))
         ]);
-        return {mode, results:unique([
-          ...results(trending),
-          ...results(popularMovies, "movie"),
-          ...results(popularShows, "tv")
-        ])};
+        const failures = homeRequests.filter((entry) => entry.status === "rejected").length;
+        if (failures) console.warn("[api/catalog] Some homepage collections were unavailable", {failures});
+        const [trending, newMovies, newShows, topMovies, topShows, ...rotatingPayloads] = homeRequests
+          .map((entry) => entry.status === "fulfilled" ? entry.value : {results:[]});
+        const trendingItems = results(trending);
+        const seen = new Set();
+        const rowSources = [
+          {title:"Trending Today", note:"Updated today", items:trendingItems},
+          {title:"New Movies", items:results(newMovies, "movie")},
+          {title:"New & Airing Series", items:results(newShows, "tv")},
+          {title:"Top-Rated Movies", items:results(topMovies, "movie")},
+          {title:"Top-Rated Series", items:results(topShows, "tv")},
+          ...rotating.map((entry, index) => ({
+            title:entry.title,
+            items:results(rotatingPayloads[index], entry.type)
+          }))
+        ];
+        const rows = rowSources
+          .map((row) => ({...row, items:takeUnseen(row.items, seen)}))
+          .filter((row) => row.items.length);
+        const heroCandidates = trendingItems.filter((item) => item.backdrop && item.overview).slice(0, 10);
+        const featured = heroCandidates.length ? heroCandidates[dailyIndex() % heroCandidates.length] : trendingItems[0] || null;
+        return {mode, featured, rows, results:unique(rows.flatMap((row) => row.items))};
       });
       return sendResult(request, response, 200, payload);
     }
@@ -131,9 +241,10 @@ module.exports = async function handler(request, response) {
       return sendResult(request, response, 200, payload);
     }
 
-    const payload = await cached(`browse:${type}:${page}`, 1800, async () => {
-      const remote = await tmdb(`/${type}/popular`, {page});
-      return {mode, type, page, results:results(remote, type)};
+    const collection = collectionRequest(type, filter, page);
+    const payload = await cached(`browse:${collection.type}:${collection.filter}:${page}`, 1800, async () => {
+      const remote = await tmdb(collection.path, collection.params);
+      return {mode, type:collection.type, filter:collection.filter, label:collection.label, page, results:results(remote, collection.type)};
     });
     return sendResult(request, response, 200, payload);
   } catch (error) {
@@ -149,3 +260,6 @@ module.exports = async function handler(request, response) {
 };
 
 module.exports.catalogCache = catalogCache;
+module.exports.BROWSE_COLLECTIONS = BROWSE_COLLECTIONS;
+module.exports.rotatingCollections = rotatingCollections;
+module.exports.collectionRequest = collectionRequest;

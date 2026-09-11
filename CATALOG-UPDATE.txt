@@ -1,0 +1,13 @@
+SANDBOXED CATALOG + DISCOVERY UPDATE
+
+This update changes catalog browsing only.
+It does not change Stripe, NOWPayments, memberships, webhooks, or Supabase.
+
+1. In cPanel File Manager, open /home/dropdebs/sandboxed.
+2. Upload Sandboxed-catalog-discovery-ready.zip into that folder.
+3. Extract it into /home/dropdebs/sandboxed and allow overwrites.
+4. Restart the Sandboxed Node application once.
+5. Open Sandboxed in a private window and check Home, Movies, and Series.
+
+No environment variables or SQL changes are required.
+Do not extract the ZIP into /home/dropdebs or public_html.

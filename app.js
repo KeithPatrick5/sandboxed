@@ -36,7 +36,7 @@ let catalog = [
   [1408,"House","tv",2004,"/3Cz7ySOQJmqiuTdrc6CY0r65yDI.jpg"]
 ].map(([id,title,type,year,poster]) => ({id,title,type,year:String(year),poster:image(poster)}));
 
-const featured = {
+let featured = {
   ...catalog[0],
   maturity:"PG-13",
   runtime:"2h 35m",
@@ -78,6 +78,11 @@ const frame = document.querySelector("#player-frame");
 const playerTitle = document.querySelector("#player-title");
 const status = document.querySelector("#catalog-status");
 const loadMore = document.querySelector("#load-more");
+const browseFilters = document.querySelector("#browse-filters");
+const hero = document.querySelector("#hero");
+const heroTitle = document.querySelector("#hero-title");
+const heroMeta = document.querySelector("#hero-meta");
+const heroOverview = document.querySelector("#hero-overview");
 const adNotice = document.querySelector("#playback-notice");
 const adHelpModal = document.querySelector("#ad-help-modal");
 const adHelpOptions = document.querySelector("#ad-help-options");
@@ -113,6 +118,7 @@ const AD_HELP_LINKS = {
 let activeTab = "home";
 let browseItems = [];
 let browsePage = 1;
+let browseFilter = "popular";
 let requestSerial = 0;
 let searchTimer;
 let adHelpReturnFocus;
@@ -134,7 +140,12 @@ function normalizeItem(item) {
     runtime: String(item.runtime || ""),
     match: Number(item.match) || 0,
     genres: Array.isArray(item.genres) ? item.genres.map(String).slice(0, 6) : [],
+    genreIds: (Array.isArray(item.genreIds) ? item.genreIds : [])
+      .map(Number)
+      .filter((value) => Number.isInteger(value) && value > 0)
+      .slice(0, 8),
     poster: /^https:\/\/(image|media)\.tmdb\.org\//.test(item.poster || "") ? item.poster : "",
+    backdrop: /^https:\/\/(image|media)\.tmdb\.org\//.test(item.backdrop || "") ? item.backdrop : "",
     overview: String(item.overview || "").slice(0, 600)
   };
 }
@@ -175,7 +186,20 @@ function loadSavedItems(owner, migrateLegacy = false) {
 let savedItemsOwner = initialSavedItemsOwner();
 let savedItems = loadSavedItems(savedItemsOwner, savedItemsOwner !== "guest");
 
-document.querySelector("#hero").style.backgroundImage = "url(https://image.tmdb.org/t/p/original/r57L2UBLPKcHdZQYg8tagv9XqK2.jpg)";
+const RECENT_ITEMS_PREFIX = "sandboxed-recent-items:";
+
+function loadRecentItems(owner) {
+  try {
+    const stored = safeJson(localStorage.getItem(`${RECENT_ITEMS_PREFIX}${owner}`) || "[]", []);
+    return Array.isArray(stored) ? stored.map(normalizeItem).filter(Boolean).slice(0, 12) : [];
+  } catch {
+    return [];
+  }
+}
+
+let recentItems = loadRecentItems(savedItemsOwner);
+
+hero.style.backgroundImage = "url(https://image.tmdb.org/t/p/original/r57L2UBLPKcHdZQYg8tagv9XqK2.jpg)";
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[character]);
@@ -209,6 +233,7 @@ async function play(item) {
   let playbackUrl;
   try { playbackUrl = new URL(access.url); } catch { return; }
   if (playbackUrl.origin !== "https://player.videasy.to") return;
+  rememberPlayed(item);
   playerTitle.textContent = item.title;
   frame.src = playbackUrl.href;
   modal.hidden = false;
@@ -279,11 +304,21 @@ function persistSavedItems() {
   try { localStorage.setItem(`${SAVED_ITEMS_PREFIX}${savedItemsOwner}`, JSON.stringify(savedItems)); } catch {}
 }
 
+function rememberPlayed(item) {
+  const normalized = normalizeItem(item);
+  if (!normalized) return;
+  const key = itemKey(normalized);
+  recentItems = [normalized, ...recentItems.filter((entry) => itemKey(entry) !== key)].slice(0, 12);
+  try { localStorage.setItem(`${RECENT_ITEMS_PREFIX}${savedItemsOwner}`, JSON.stringify(recentItems)); } catch {}
+  if (activeTab === "home") renderRows();
+}
+
 function switchSavedItemsOwner(userId) {
   const nextOwner = USER_ID_PATTERN.test(userId || "") ? userId : "guest";
   if (nextOwner === savedItemsOwner) return;
   savedItemsOwner = nextOwner;
   savedItems = loadSavedItems(savedItemsOwner, savedItemsOwner !== "guest");
+  recentItems = loadRecentItems(savedItemsOwner);
   updateHeroList();
   renderRows();
   if (activeTab === "list") {
@@ -320,17 +355,54 @@ function card(item) {
   return article;
 }
 
+function personalizedRows() {
+  const additions = [];
+  if (recentItems.length) additions.push(["Continue Watching", recentItems, "Started on this device"]);
+
+  const latest = recentItems[0];
+  const preferredGenres = new Set(latest?.genreIds || []);
+  if (preferredGenres.size) {
+    const recentKeys = new Set(recentItems.map(itemKey));
+    const related = catalog
+      .filter((item) => !recentKeys.has(itemKey(item)) && item.genreIds?.some((genre) => preferredGenres.has(genre)))
+      .slice(0, 16);
+    if (related.length >= 6) additions.push([`Because You Watched ${latest.title}`, related, "Based on genres"]);
+  }
+  return [...additions, ...rows];
+}
+
 function renderRows() {
   const target = document.querySelector("#content-rows");
   target.replaceChildren();
-  rows.forEach(([title,items],index) => {
+  personalizedRows().forEach(([title,items,note],index) => {
     const section = document.createElement("div");
     section.className = "media-row";
-    section.innerHTML = `<div class="row-heading"><h2>${title}</h2>${index === 0 ? "<span>Updated today</span>" : ""}</div><div class="card-track"></div>`;
+    section.innerHTML = `<div class="row-heading"><h2>${escapeHtml(title)}</h2>${note ? `<span>${escapeHtml(note)}</span>` : index === 0 ? "<span>Updated today</span>" : ""}</div><div class="card-track"></div>`;
     const track = section.querySelector(".card-track");
     items.forEach((item) => track.append(card(item)));
     target.append(section);
   });
+}
+
+function updateHero() {
+  if (featured.backdrop) hero.style.backgroundImage = `url(${featured.backdrop})`;
+  hero.classList.toggle("has-long-title", featured.title.length > 16);
+  hero.classList.toggle("has-very-long-title", featured.title.length > 28);
+  heroTitle.textContent = featured.title;
+  heroMeta.replaceChildren();
+  const label = document.createElement("strong");
+  label.textContent = "Featured Today";
+  heroMeta.append(label);
+  if (featured.year) {
+    const year = document.createElement("span");
+    year.textContent = featured.year;
+    heroMeta.append(year);
+  }
+  const type = document.createElement("span");
+  type.textContent = featured.type === "tv" ? "Series" : "Movie";
+  heroMeta.append(type);
+  heroOverview.textContent = featured.overview || "A featured title from today’s catalog.";
+  updateHeroList();
 }
 
 function setStatus(message, loading = false) {
@@ -362,7 +434,7 @@ function renderGrid() {
 }
 
 async function getCatalog(params) {
-  const response = await fetch(`/api/catalog?${new URLSearchParams({...params, v:"2"})}`, {headers:{accept:"application/json"}});
+  const response = await fetch(`/api/catalog?${new URLSearchParams({...params, v:"3"})}`, {headers:{accept:"application/json"}});
   if (!response.ok) throw new Error(`Catalog request failed (${response.status})`);
   return response.json();
 }
@@ -372,9 +444,18 @@ async function loadHome() {
     const data = await getCatalog({mode:"home"});
     const incoming = (data.results || []).map(normalizeItem).filter((item) => item?.poster);
     if (incoming.length < 20) return;
-    const pinned = catalog.filter((item) => item.type === "movie" && (item.id === 1368337 || item.id === 1339713));
-    catalog = [...new Map([...pinned, ...incoming].map((item) => [itemKey(item), item])).values()];
-    rows = buildHomeRows(catalog);
+    catalog = [...new Map(incoming.map((item) => [itemKey(item), item])).values()];
+    const incomingRows = (data.rows || []).map((row) => [
+      String(row?.title || "More to Watch").slice(0, 80),
+      (row?.items || []).map(normalizeItem).filter((item) => item?.poster),
+      String(row?.note || "").slice(0, 80)
+    ]).filter(([,items]) => items.length);
+    rows = incomingRows.length ? incomingRows : buildHomeRows(catalog);
+    const incomingFeatured = normalizeItem(data.featured);
+    if (incomingFeatured?.backdrop) {
+      featured = incomingFeatured;
+      updateHero();
+    }
     renderRows();
   } catch (error) {
     console.warn("[catalog:home] Using current built-in titles", error);
@@ -392,15 +473,17 @@ async function loadBrowse(type, append = false) {
   }
   setStatus(append ? "Loading more titles…" : "Loading the catalog…", true);
   try {
-    const data = await getCatalog({type, page:String(nextPage)});
+    const data = await getCatalog({type, filter:browseFilter, page:String(nextPage)});
     if (serial !== requestSerial || activeTab !== type) return;
     const incoming = (data.results || []).map(normalizeItem).filter((item) => item?.poster);
     const merged = append ? [...browseItems, ...incoming] : incoming;
     browseItems = [...new Map(merged.map((item) => [itemKey(item), item])).values()];
     browsePage = nextPage;
     renderGrid();
-    const label = type === "tv" ? "series" : "movies";
-    setStatus(`${browseItems.length.toLocaleString()} ${label} loaded • page ${browsePage.toLocaleString()} • posters included`);
+    const mediaLabel = type === "tv" ? "series" : "movies";
+    const collectionLabel = String(data.label || "Popular");
+    setStatus(`${browseItems.length.toLocaleString()} ${collectionLabel.toLowerCase()} ${mediaLabel} loaded • page ${browsePage.toLocaleString()}`);
+    loadMore.textContent = `Show 20 more ${mediaLabel}`;
     loadMore.hidden = incoming.length < 20;
   } catch (error) {
     if (serial !== requestSerial) return;
@@ -446,6 +529,30 @@ function updateHeroList() {
   document.querySelector("#hero-list").textContent = isSaved(featured) ? "✓ In My List" : "+ My List";
 }
 
+function updateBrowseFilters() {
+  browseFilters.hidden = activeTab !== "movies" && activeTab !== "tv";
+  browseFilters.querySelectorAll("[data-catalog-filter]").forEach((button) => {
+    const active = button.dataset.catalogFilter === browseFilter;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+    if (activeTab === "tv" && button.dataset.catalogFilter === "action") button.textContent = "Action & Adventure";
+    else if (activeTab === "tv" && button.dataset.catalogFilter === "science_fiction") button.textContent = "Sci-Fi & Fantasy";
+    else if (activeTab === "tv" && button.dataset.catalogFilter === "horror") button.textContent = "Horror & Mystery";
+    else if (button.dataset.catalogFilter === "action") button.textContent = "Action";
+    else if (button.dataset.catalogFilter === "science_fiction") button.textContent = "Sci-Fi";
+    else if (button.dataset.catalogFilter === "horror") button.textContent = "Horror";
+  });
+}
+
+function setBrowseFilter(filter) {
+  if (activeTab !== "movies" && activeTab !== "tv") return;
+  browseFilter = filter;
+  search.value = "";
+  clearSearch.hidden = true;
+  updateBrowseFilters();
+  loadBrowse(activeTab);
+}
+
 function setTab(tab) {
   clearTimeout(searchTimer);
   requestSerial += 1;
@@ -462,10 +569,13 @@ function setTab(tab) {
     loadMore.hidden = true;
     document.querySelector("#browse-title").textContent = tab === "tv" ? "Series" : tab === "list" ? "My List" : "Movies";
     if (tab === "list") {
+      updateBrowseFilters();
       browseItems = savedItems;
       setStatus(`${savedItems.length} saved title${savedItems.length === 1 ? "" : "s"}`);
       renderGrid();
     } else {
+      browseFilter = "popular";
+      updateBrowseFilters();
       loadBrowse(tab);
     }
   }
@@ -484,12 +594,14 @@ function openSearch() {
   clearSearch.hidden = true;
   loadMore.hidden = true;
   browseItems = [];
+  updateBrowseFilters();
   setStatus("Search movies and series");
   showEmpty("Search the full catalog.", "Type at least two letters to find a title.");
   setTimeout(() => search.focus(),0);
 }
 
 document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => setTab(button.dataset.tab)));
+document.querySelectorAll("[data-catalog-filter]").forEach((button) => button.addEventListener("click", () => setBrowseFilter(button.dataset.catalogFilter)));
 document.querySelector(".search-button").addEventListener("click", openSearch);
 search.addEventListener("input", () => {
   clearSearch.hidden = !search.value;
